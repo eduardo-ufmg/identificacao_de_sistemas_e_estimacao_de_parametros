@@ -48,7 +48,76 @@ A figura \ref{fig:impulso_completa} mostra a resposta ao impulso, obtida pelo tr
 \end{figure}
 
 \subsection*{c}
-As figuras \ref{fig:impulso_transitoria} e \ref{fig:impulso_inicial} mostram um atraso puro de tempo de 2 segundos, para o tempo considerado $Ts = 1 segundo$.
+As figuras \ref{fig:impulso_transitoria} e \ref{fig:impulso_inicial} mostram um atraso puro de tempo de 2 segundos, para o tempo considerado $Ts = 1 segundo$. A forma causal padrão desta função de transferência, obtida pela multiplicação por $\frac{z^{-2}}{z^{-2}}$, é
+
+\begin{equation}
+    H(z) = \frac{z^{-2}}{1 + 0.2z^{-1} + 0.8z^{-2}}
+\end{equation}
+
+Nesta, o atraso de duas amostras é evidenciado por $z^{-2}$ no numerador da expressão. Sua equivalente no domínio do tempo é
+
+\begin{equation}
+    y[k] = -0.2y[k-1] - 0.8y[k-2] + u[k-2]
+\end{equation}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{imagens/impulso_transitoria.png}
+    \caption{Resposta Transitoria do sistema}
+    \label{fig:impulso_transitoria}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{imagens/impulso_inicial.png}
+    \caption{Resposta Inicial do sistema}
+    \label{fig:impulso_inicial}
+\end{figure}
+
+\section*{Questão 2}
+Seja
+
+\begin{equation}
+    H(z) = \frac{0.1701z + 0.1208}{z^2 - z + 0.2725}
+\end{equation}
+
+\subsection*{a, b}
+A figura \ref{fig:aleatorio_sem_ruido} relaciona a entrada do sistema à sua saída. A definição da função de transferência e do sinal de excitação, a simulação e a traçagem dos gráficos são feitas no trecho de código \ref{lst:ft_sem_ruido}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{imagens/aleatorio_sem_ruido.png}
+    \caption{Resposta do sistema sem ruído}
+    \label{fig:aleatorio_sem_ruido}
+\end{figure}
+
+\subsection*{c}
+Dado que a função de transferência simulada tem mais polos do que zeros, seu ganho é reduzido conforme a frequência da entrada aumenta. Portanto, é esperado que o sinal mais lento, com menos oscilações, seja a saída, enquanto o mais rápido e aleatório seja a entrada.
+
+\section*{Questão 3}
+Seja o modelo temporal
+
+\begin{equation}
+    y[k] = y[k-1] - 0.2725y[k-2] + 0.1701u[k-1] + 0.1208u[k-2] + e[k]
+\end{equation}
+
+A figura \ref{fig:arx_vs_ft}, obtida em \ref{lst:simula_arx}, compara a resposta do modelo ARX com a resposta do modelo em função de transferência. A diferença nos primeiros passos é dada pela variação nas condições iniciais. Como não há ruído, em poucas iterações, ambas as respostas convergem.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{imagens/arx_vs_ft.png}
+    \caption{Comparação entre o modelo ARX e o modelo em função de transferência}
+    \label{fig:arx_vs_ft}
+\end{figure}
+
+A figura \ref{fig:arx_ruido_vs_ft}, obtida em \ref{lst:simula_arx_ruido}, mostra que a existência de ruído, ainda que em baixa amplitude, é suficiente para impedir a convergência entre os modelos.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{imagens/arx_ruido_vs_ft.png}
+    \caption{Comparação entre o modelo ARX afetado por ruído e o modelo em função de transferência}
+    \label{fig:arx_ruido_vs_ft}
+\end{figure}
 
 \section*{Códigos}
 
@@ -98,6 +167,142 @@ plt.title("Resposta Inicial de H(z) = 1/(z^2 + 0.2z + 0.8), Ts = 1 segundo")
 plt.xlabel("Tempo (s)")
 plt.ylabel("Amplitude")
 plt.grid(True)
+plt.show()
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Define a função de transferência, simula e plota a resposta do sistema sem ruído}, label={lst:ft_sem_ruido}]
+# H(z) = ( 0.1701z + 0.1208 ) / ( z^2 - z + 0.2725 )
+num = [0.1701, 0.1208]  # Numerator coefficients
+den = [1, -1, 0.2725]  # Denominator coefficients
+
+# Set the number of samples and the sampling period
+n_samples = 500
+Ts = 1  # Sampling period in seconds
+
+# Set the white random input generator
+rng = np.random.default_rng(seed=0)
+half_range = np.sqrt(
+    3
+)  # for uniform, std = (b-a)/sqrt(12) -> half_range = sqrt(12)/2 = sqrt(3)
+a = 0.5 - half_range
+b = 0.5 + half_range
+
+# generate uniform white noise with mean 0.5 and std 1
+u = rng.uniform(a, b, size=n_samples)
+
+# simulate system response to u
+out = signal.dlsim((num, den, Ts), u)
+t, y_tf = out[0], out[1].flatten()
+
+# plots
+plt.figure(figsize=(12, 6))
+plt.subplot(2, 1, 1)
+plt.plot(t, u)
+plt.title("Entrada (Sinal Branco Uniforme, media=0.5, desvio padrao=1)")
+plt.xlabel("Tempo (s)")
+plt.ylabel("u")
+plt.grid(True)
+
+plt.subplot(2, 1, 2)
+plt.plot(t, y_tf)
+plt.title("Saida")
+plt.xlabel("Tempo (s)")
+plt.ylabel("y")
+plt.grid(True)
+
+plt.tight_layout()
+plt.show()
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Simula e plota a resposta do modelo ARX}, label={lst:simula_arx}]
+# Set the state-space model y(k) = y(k-1) - 0.2725*y(k-2) + 0.1701*u(k-1) + 0.1208*u(k-2) + e(k)
+def arx(k, y, u, e):
+    return y[k - 1] - 0.2725 * y[k - 2] + 0.1701 * u[k - 1] + 0.1208 * u[k - 2] + e[k]
+
+# Set the initial conditions
+y_arx = np.zeros(n_samples)
+y_arx[0], y_arx[1] = 0.6, 0.5
+
+# No noise, to compare with the transfer function
+e = np.zeros(n_samples)
+
+# Simulate ARX model
+for k in range(2, n_samples):
+    y_arx[k] = arx(k, y_arx, u, e)
+
+diff = y_arx - y_tf
+
+# Plot the output of the ARX model, the TF side by side and the difference, in the same figure
+plt.figure(figsize=(12, 6))
+plt.subplot(3, 1, 1)
+plt.plot(t, y_arx)
+plt.title("Saida (Modelo ARX)")
+plt.xlabel("Tempo (s)")
+plt.ylabel("y")
+plt.grid(True)
+
+plt.subplot(3, 1, 2)
+plt.plot(t, y_tf)
+plt.title("Saida (Funcao de Transferencia)")
+plt.xlabel("Tempo (s)")
+plt.ylabel("y")
+plt.grid(True)
+
+plt.subplot(3, 1, 3)
+plt.plot(t, diff)
+plt.title("Diferenca (ARX - TF)")
+plt.xlabel("Tempo (s)")
+plt.ylabel("y")
+plt.grid(True)
+
+plt.tight_layout()
+plt.show()
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Simula e plota a resposta do modelo ARX com ruído}, label={lst:simula_arx_ruido}]
+# Compute the standard deviation of the output
+std_y = np.std(y_arx)
+
+# Set the noise as a gaussian with mean 0 and standard deviation 0.05*std_y
+e = rng.normal(0, 0.05 * std_y, n_samples)
+
+# Simulate the ARX model with noise
+
+# Initialize the ARX output
+y_arx = np.zeros(n_samples)
+y_arx[0], y_arx[1] = 0.6, 0.5
+
+# Run the ARX model
+for k in range(2, n_samples):
+    y_arx[k] = arx(k, y_arx, u, e)
+
+# Compute the error
+diff = y_arx - y_tf
+
+# Plot the output of the ARX model, the TF and the error side by side, in the same figure
+plt.figure(figsize=(12, 6))
+plt.subplot(3, 1, 1)
+plt.plot(t, y_arx)
+plt.title("Saida (Modelo ARX com Ruido)")
+plt.xlabel("Tempo (s)")
+plt.ylabel("y")
+plt.grid(True)
+
+plt.subplot(3, 1, 2)
+plt.plot(t, y_tf)
+plt.title("Saida (Funcao de Transferencia)")
+plt.xlabel("Tempo (s)")
+plt.ylabel("y")
+plt.grid(True)
+
+plt.subplot(3, 1, 3)
+plt.plot(t, diff)
+plt.title("Erro (ARX - FT)")
+plt.xlabel("Tempo (s)")
+plt.ylabel("Erro")
+plt.grid(True)
+
+plt.tight_layout()
 plt.show()
 \end{lstlisting}
 
