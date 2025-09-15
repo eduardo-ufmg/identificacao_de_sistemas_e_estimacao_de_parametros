@@ -5,25 +5,10 @@
 \usepackage{amsmath, amssymb}
 \usepackage{graphicx}
 \usepackage{hyperref}
-\usepackage{listings}
 \usepackage{float}
-\usepackage{xcolor}
-\usepackage{pgffor}
+\usepackage{geometry}
 
-\lstset{
-    breaklines=true,
-    breakatwhitespace=true,
-    postbreak=\mbox{\textcolor{red}{$\hookrightarrow$}\space},
-    basicstyle=\ttfamily\small,
-    numbers=left,
-    numberstyle=\tiny,
-    stepnumber=1,
-    numbersep=5pt,
-    frame=single,
-    showstringspaces=false,
-    tabsize=4,
-    language=Python
-}
+\geometry{margin=1in}
 
 \title{Mínimos Quadrados, ARX, ARMAX e OE}
 \author{Eduardo Henrique Basilio de Carvalho}
@@ -144,8 +129,8 @@ Dado
 com dois atrasos em $A(z)$ e $B(z)$,
 
 \begin{align*}
-    y[k] + a_1y[k-1] + a_2y[k-2] &= b_1u[k-1] + b_2u[k-2] + e[k] \\
-    y[k] &= -a_1y[k-1] - a_2y[k-2] + b_1u[k-1] + b_2u[k-2] + e[k]
+    y[k]& + a_1y[k-1] + a_2y[k-2] = b_1u[k-1] + b_2u[k-2] + e[k] \\
+    y[k]& = -a_1y[k-1] - a_2y[k-2] + b_1u[k-1] + b_2u[k-2] + e[k]
 \end{align*}
 
 Seja
@@ -216,8 +201,8 @@ Dado
 com dois atrasos em $A(z)$, $B(z)$ e $C(z)$,
 
 \begin{align*}
-    y[k] + a_1y[k-1] + a_2y[k-2] &= b_1u[k-1] + b_2u[k-2] + e[k] + c_1e[k-1] + c_2e[k-2] \\
-    y[k] &= -a_1y[k-1] - a_2y[k-2] + b_1u[k-1] + b_2u[k-2] + e[k] + c_1e[k-1] + c_2e[k-2]
+    y[k]& + a_1y[k-1] + a_2y[k-2] = b_1u[k-1] + b_2u[k-2] + e[k] + c_1e[k-1] + c_2e[k-2] \\
+    y[k]& = -a_1y[k-1] - a_2y[k-2] + b_1u[k-1] + b_2u[k-2] + e[k] + c_1e[k-1] + c_2e[k-2]
 \end{align*}
 
 A construção
@@ -285,8 +270,8 @@ Dado
 com dois atrasos em $F(z)$ e $B(z)$,
 
 \begin{align*}
-    y[k] + f_1y[k-1] + f_2y[k-2] &= b_0u[k] + b_1u[k-1] + b_2u[k-2] + f_0e[k] + f_1e[k-1] + f_2e[k-2] \\
-    y[k] &= -f_1y[k-1] - f_2y[k-2] + b_0u[k] + b_1u[k-1] + b_2u[k-2] + f_0e[k] + f_1e[k-1] + f_2e[k-2]
+    y[k]& + f_1y[k-1] + f_2y[k-2] = b_0u[k] + b_1u[k-1] + b_2u[k-2] + f_0e[k] + f_1e[k-1] + f_2e[k-2] \\
+    y[k]& = -f_1y[k-1] - f_2y[k-2] + b_0u[k] + b_1u[k-1] + b_2u[k-2] + f_0e[k] + f_1e[k-1] + f_2e[k-2]
 \end{align*}
 
 Assim como para ARMAX, a separação entre saída, regressores e parâmetros constrói um sistema não linear nos parâmetros. Porém, neste caso, não é possível partir de uma estimativa inicial que ignore os erros de medição, já que assumir $F(z) = 1$ desconsidera, também, a dinâmica do sistema. Resta, então, resolver por otimização não linear. Um algoritmo candidato é:
@@ -321,5 +306,30 @@ A identificação ainda é consideravelmente simples, dado que estimar os erros 
 Descartada a possibilidade de regressão linear, a identificação é mais complexa. Tal complexidade, entretanto, é concentrada na seleção de um novo candidato para F, passo que pode ser delegado ao módulo SciPy. Com esta ferramenta mais robusta, a performance do modelo foi, visualmente, tão boa quanto a do ARX.
 
 \section*{Questão 4}
+
+Seja $J_{MQ}=(y-\Psi\Theta)^{T}(y-\Psi\Theta)$ e $\Psi$ não singular.
+
+\begin{align*}
+    J_{\text{reg}}&=\tfrac12\big[(y-\Psi\Theta)^{T}(y-\Psi\Theta)\big]+\tfrac12\lambda\Theta^{T}\Theta \\
+    J_{\text{reg}}&=\tfrac12(y^{T}y-2y^{T}\Psi\Theta+\Theta^{T}\Psi^{T}\Psi\Theta)+\tfrac12\lambda\Theta^{T}\Theta \\
+    \nabla_{\Theta}J_{\text{reg}}&=-\Psi^{T}y+(\Psi^{T}\Psi)\Theta+\lambda\Theta \\
+\end{align*}
+
+Para ponto crítico,
+
+\begin{gather*}
+    0=-\Psi^{T}y+(\Psi^{T}\Psi)\Theta+\lambda\Theta \\
+    (\Psi^{T}\Psi+\lambda I)\Theta=\Psi^{T}y \\
+    \hat\Theta_{\text{reg}}=(\Psi^{T}\Psi+\lambda I)^{-1}\Psi^{T}y
+\end{gather*}
+
+Para mínimo,
+
+\begin{equation*}
+    \nabla^{2}_{\Theta}J_{\text{reg}}=\Psi^{T}\Psi+\lambda I>0
+\end{equation*}
+
+O que é garantido para $\lambda>0$.
+
 
 \end{document}
