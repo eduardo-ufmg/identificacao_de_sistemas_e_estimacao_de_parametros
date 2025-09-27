@@ -1,0 +1,48 @@
+\documentclass{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[brazil]{babel}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{float}
+\usepackage{geometry}
+
+\geometry{margin=1in}
+
+\title{Estimadores Não Polarizados}
+\author{Eduardo Henrique Basilio de Carvalho}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section*{Questão 2}
+
+\subsection*{E7.1}
+
+Seja o ruído ARMA
+
+\begin{equation}
+    e[k] = E_1 e[k-1] + w[k] + W_1 w[k-1]
+\end{equation}
+
+o modelo MA
+
+\begin{equation}
+    y[k] = b_1 u[k-1] + b_2 u[k-2] + e[k]
+\end{equation}
+
+e o estimador MQ
+
+\begin{equation}
+    \hat{\Theta} = ( \Psi^T \Psi )^{-1} \Psi^T Y
+\end{equation}
+
+Como $\Psi$ não depende de $e[k]$, o estimador é não polarizado.
+
+\subsection*{E7.2}
+
+
+\end{document}
