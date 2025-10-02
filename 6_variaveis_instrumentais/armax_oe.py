@@ -2,9 +2,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-# ---------------------
-# Core helper functions
-# ---------------------
 def safe_get(x: np.ndarray, idx: int) -> float:
     return float(x[idx]) if 0 <= idx < x.size else 0.0
 
@@ -91,7 +88,6 @@ def estimate_arx_iv(y: np.ndarray, u: np.ndarray, na: int, nb: int, nk: int, n_i
     theta_ls = np.linalg.pinv(Phi) @ Y
     theta = theta_ls.copy()
     N = y.size
-    # iterative VI with simulated output as instrument
     for _ in range(n_iter):
         y_sim = simulate_arx(theta, u, N, na, nb, nk)
         M = Phi.shape[0]
@@ -107,27 +103,21 @@ def estimate_arx_iv(y: np.ndarray, u: np.ndarray, na: int, nb: int, nk: int, n_i
     sigma2 = np.var(res, ddof=1)
     return theta[:na].copy(), theta[na:].copy(), sigma2
 
-# ---------------------
-# Simulation parameters
-# ---------------------
-N_steps = 1000             # time series length per run
-n_runs = 100               # number of Monte Carlo runs per generator
+N_steps = 1000
+n_runs = 100
 na = 2
 nb = 2
 nk = 0
-n_iter_iv = 10            # iterations for the iterative VI estimator
+n_iter_iv = 10
 
-# True system parameters (generator)
 A_true = np.array([-1.5, 0.7])
 B_true = np.array([1.0, 0.5])
-C_true = np.array([0.8, 0.0])  # ARMAX noise filter (used in generator)
-F_true = A_true                # OE generator uses F = A_true
+C_true = np.array([0.8, 0.0])
+F_true = A_true
 
-# Input signal (fixed across runs for fairness)
 rng = np.random.default_rng(0)
 u_fixed = rng.uniform(-1, 1, N_steps)
 
-# Pre-allocate storage for estimates
 def zeros_storage():
     return {
         'A1_ls': np.zeros(n_runs), 'A2_ls': np.zeros(n_runs),
@@ -139,21 +129,13 @@ def zeros_storage():
 results_armax = zeros_storage()
 results_oe = zeros_storage()
 
-# ---------------------
-# Monte Carlo simulations
-# ---------------------
-print("Starting Monte Carlo. Runs per generator:", n_runs)
-
 for run in range(n_runs):
-    # new white noise each run
     noise = rng.normal(0, 0.1, N_steps)
 
-    # --- ARMAX generator simulation ---
     y_armax = np.zeros(N_steps)
     for k in range(N_steps):
         y_armax[k] = armax(A_true, B_true, C_true, nk, u_fixed, y_armax, noise, k)
 
-    # Estimates on ARMAX data
     A_ls, B_ls, _ = estimate_arx_ls(y_armax, u_fixed, na, nb, nk)
     A_iv, B_iv, _ = estimate_arx_iv(y_armax, u_fixed, na, nb, nk, n_iter=n_iter_iv)
 
@@ -167,13 +149,11 @@ for run in range(n_runs):
     results_armax['B1_iv'][run] = B_iv[0]
     results_armax['B2_iv'][run] = B_iv[1]
 
-    # --- OE generator simulation ---
     noise2 = rng.normal(0, 0.1, N_steps)
     y_oe = np.zeros(N_steps)
     for k in range(N_steps):
         y_oe[k] = oe(F_true, B_true, nk, u_fixed, y_oe, noise2, k)
 
-    # Estimates on OE data
     A_ls_o, B_ls_o, _ = estimate_arx_ls(y_oe, u_fixed, na, nb, nk)
     A_iv_o, B_iv_o, _ = estimate_arx_iv(y_oe, u_fixed, na, nb, nk, n_iter=n_iter_iv)
 
@@ -187,14 +167,6 @@ for run in range(n_runs):
     results_oe['B1_iv'][run] = B_iv_o[0]
     results_oe['B2_iv'][run] = B_iv_o[1]
 
-    if (run + 1) % 200 == 0:
-        print(f"Completed runs: {run + 1}/{n_runs}")
-
-print("Monte Carlo finished.")
-
-# ---------------------
-# Plotting helpers
-# ---------------------
 def plot_param_histograms(result_dict, model_name, out_dir="imagens", bins=60):
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     params = [('A1', 'A1_ls', 'A1_iv'),
@@ -209,10 +181,8 @@ def plot_param_histograms(result_dict, model_name, out_dir="imagens", bins=60):
         data_ls = result_dict[key_ls]
         data_iv = result_dict[key_iv]
 
-        # determine common range and bins
         combined_min = min(data_ls.min(), data_iv.min())
         combined_max = max(data_ls.max(), data_iv.max())
-        # add small margin
         span = combined_max - combined_min
         if span == 0:
             combined_min -= 0.5
@@ -237,21 +207,7 @@ def plot_param_histograms(result_dict, model_name, out_dir="imagens", bins=60):
     plt.close(fig)
     print(f"Saved figure: {out_path}")
 
-# ---------------------
-# Create figures
-# ---------------------
 plot_param_histograms(results_armax, "ARMAX", out_dir="imagens", bins=60)
 plot_param_histograms(results_oe, "OE", out_dir="imagens", bins=60)
 
-# Print summary statistics
-def print_summary(result_dict, model_name):
-    print(f"\nSummary {model_name}:")
-    for param in ['A1', 'A2', 'B1', 'B2']:
-        ls = result_dict[f"{param}_ls"]
-        iv = result_dict[f"{param}_iv"]
-        print(f"{param}: MQ mean={ls.mean():.4f} std={ls.std(ddof=1):.4f} | VI mean={iv.mean():.4f} std={iv.std(ddof=1):.4f}")
 
-print_summary(results_armax, "ARMAX")
-print_summary(results_oe, "OE")
-
-# End of script
