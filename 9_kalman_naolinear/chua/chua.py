@@ -26,7 +26,7 @@ from statsmodels.tsa.stattools import acf
 C1 = 30.14e-6  # F
 C2 = 185.6e-6  # F
 L = 52.28      # H
-R = 1673.0     # Ohms
+R_res = 1673.0 # Ohms (series resistor between C1 and C2)
 RL = 0.0       # Ohms
 Ga = -0.801e-3 # S (mS to S)
 Gb = -0.365e-3 # S (mS to S)
@@ -69,19 +69,24 @@ def f_continuous(x, u):
     
     i_N = i_N_func(x1) # Nonlinear current
     
-    dx1_dt = (1/C1) * ((x2 - x1)/R - i_N + u1)
-    dx2_dt = (1/C2) * ((x1 - x2)/R + x3 + u2)
+    dx1_dt = (1/C1) * ((x2 - x1)/R_res - i_N + u1)
+    dx2_dt = (1/C2) * ((x1 - x2)/R_res + x3 + u2)
     dx3_dt = (1/L) * (-x2 + RL * x3 + u3)
     
     return np.array([dx1_dt, dx2_dt, dx3_dt])
 
 # --- Discrete-Time State Transition (Forward Euler) ---
-def f_discrete_euler(x, u):
+def f_discrete_euler(x, dt, u=None):
     """
-    Discrete-time state transition function: x_k+1 = F(x_k, u_k)
-    Uses Forward Euler: x_k+1 = x_k + Ts * f(x_k, u_k)
+    Discrete-time state transition function: x_{k+1} = F(x_k, u_k)
+    Uses Forward Euler: x_{k+1} = x_k + dt * f(x_k, u_k)
+
+    Signature compatible with filterpy's UKF: fx(x, dt, **fx_args)
+    where we pass control input via keyword arg 'u'.
     """
-    return x + Ts * f_continuous(x, u)
+    if u is None:
+        u = np.zeros(3)
+    return x + dt * f_continuous(x, u)
 
 # --- Measurement Function ---
 def h_measurement(x):
@@ -105,16 +110,16 @@ def get_jacobian_A(x):
     
     A = I + Ts * (df/dx)
     
-    df/dx = [ [ 1/C1*(-1/R - g(x1)), 1/(C1*R)      , 0     ],
-              [ 1/(C2*R)            , -1/(C2*R)     , 1/C2  ],
+    df/dx = [ [ 1/C1*(-1/R_res - g(x1)), 1/(C1*R_res)      , 0     ],
+              [ 1/(C2*R_res)            , -1/(C2*R_res)     , 1/C2  ],
               [ 0                   , -1/L          , RL/L  ] ]
     """
     x1 = x[0]
     
     # Jacobian of continuous f
     J_f = np.array([
-        [(1/C1) * (-1/R - g_func(x1)), 1/(C1*R) , 0.   ],
-        [1/(C2*R)                    , -1/(C2*R), 1/C2   ],
+        [(1/C1) * (-1/R_res - g_func(x1)), 1/(C1*R_res) , 0.   ],
+        [1/(C2*R_res)                    , -1/(C2*R_res), 1/C2   ],
         [0.                          , -1/L     , RL/L ]
     ])
     
@@ -189,7 +194,7 @@ def run_ekf(z_data, u_data, Q, R, x0, P0):
     for k in range(N_samples):
         # --- PREDICT ---
         # Project state ahead
-        x_pred = f_discrete_euler(x_k, u_data[k])
+        x_pred = f_discrete_euler(x_k, Ts, u=u_data[k])
         
         # Get state transition Jacobian
         A_k = get_jacobian_A(x_k)
