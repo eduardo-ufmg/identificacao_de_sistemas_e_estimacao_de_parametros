@@ -1,398 +1,404 @@
 #!/usr/bin/env python3
-"""
-Usage examples:
-    python chua.py --files pcchua_dados.dat pcchua_pert.dat --summary --plot all --fft x y --embed x 3 20 --lyapunov x 5 100
 
-Features:
- - robust loader for the PCChua .dat format (skips comments, reads numeric columns)
- - prints summary stats (mean, std, min, max) per column
- - time-series plots (save PNGs)
- - FFT / PSD plots
- - spectrograms
- - 2D phase plots (x vs y, x vs z, y vs z)
- - time-delay embedding (Takens) and plot
- - simple Rosenstein largest Lyapunov exponent estimator (rough, for diagnostics)
- - CSV export option for cleaned numeric streams
+"""
+Performs state estimation for Chua's circuit using EKF and UKF.
+
+This script loads experimental data from 'pcchua_dados.dat' or 'pcchua_pert.dat',
+defines the nonlinear system dynamics, and applies both an Extended Kalman Filter (EKF)
+and an Unscented Kalman Filter (UKF) to estimate the unmeasured state v_C1 (x1).
+
+It also provides plots to analyze the estimation accuracy and check the
+"whiteness" of the innovations (residuals) via an autocorrelation plot.
 """
 
-from pathlib import Path
-import argparse
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-from scipy import signal
-from scipy.fft import rfft, rfftfreq
-from scipy.spatial import KDTree
-from math import log
-import os
-import sys
+from filterpy.kalman import UnscentedKalmanFilter, MerweScaledSigmaPoints
+from statsmodels.graphics.tsaplots import plot_acf
+from statsmodels.tsa.stattools import acf
 
-# -------------------------
-# IO and parsing
-# -------------------------
-def load_pcchua_dat(path):
+# =============================================================================
+# 1. Parameters and System Model
+# =============================================================================
+
+# --- System Parameters (in SI units) ---
+C1 = 30.14e-6  # F
+C2 = 185.6e-6  # F
+L = 52.28      # H
+R = 1673.0     # Ohms
+RL = 0.0       # Ohms
+Ga = -0.801e-3 # S (mS to S)
+Gb = -0.365e-3 # S (mS to S)
+E = 1.74       # V
+Ts = 0.01      # s (Sampling time 10.00 ms)
+
+# --- Nonlinear Diode Function i_N(x1) ---
+# Piecewise-linear current i_N = G(v_C1) * v_C1
+def i_N_func(x1):
     """
-    Load a PCChua-style .dat file.
-    Returns (df, meta) where df is a pandas.DataFrame with columns:
-      ['time','x','y','z','xref','yref','zref','ux','uy','uz'] (if present)
-    and meta is a dict of parsed header lines (Date, Experiment, Ts if present).
+    Calculates the nonlinear diode current i_N(x1).
+    x1 is v_C1.
     """
-    path = Path(path)
-    meta = {}
-    data_lines = []
-    with path.open('r') as f:
-        for ln in f:
-            s = ln.strip()
-            if not s:
-                continue
-            if s.startswith('#'):
-                # attempt to capture simple metadata
-                content = s.lstrip('#').strip()
-                if ':' in content:
-                    k, v = content.split(':',1)
-                    meta[k.strip()] = v.strip()
-                else:
-                    # other header lines like "Ts = 10.00 ms"
-                    if 'Ts' in content:
-                        meta['Ts'] = content
-                    else:
-                        # keep general header text
-                        meta.setdefault('header', []).append(content)
-                continue
-            # numeric line
-            parts = s.split()
-            # drop lines that obviously are not data
-            if len(parts) < 2:
-                continue
-            data_lines.append(parts)
-    if len(data_lines) == 0:
-        raise ValueError(f"No data found in {path}")
-    # convert to float matrix
-    mat = np.array(data_lines, dtype=float)
-    # guess columns:
-    # first is time, next 3 are x y z, next 3 xref yref zref, next 3 ux uy uz  => total 10 columns
-    ncols = mat.shape[1]
-    if ncols == 10:
-        cols = ['time','x','y','z','xref','yref','zref','ux','uy','uz']
-    elif ncols == 4:
-        cols = ['time','x','y','z']
-    elif ncols == 7:
-        cols = ['time','x','y','z','xref','yref','zref']
+    if abs(x1) <= E:
+        return Ga * x1
+    elif x1 > E:
+        return Gb * x1 + (Ga - Gb) * E
+    else: # x1 < -E
+        return Gb * x1 - (Ga - Gb) * E
+
+# --- Derivative of Nonlinearity g(x1) ---
+def g_func(x1):
+    """
+    Calculates the derivative d(i_N)/d(x1).
+    """
+    if abs(x1) < E:
+        return Ga
     else:
-        # fallback: generic names
-        cols = ['c{}'.format(i) for i in range(ncols)]
-        cols[0] = 'time'
-    df = pd.DataFrame(mat, columns=cols)
-    return df, meta
+        return Gb
 
-# -------------------------
-# Basic summaries and export
-# -------------------------
-def summary_stats(df):
-    s = df.describe().transpose()
-    return s[['count','mean','std','min','25%','50%','75%','max']]
-
-def save_csv(df, outpath):
-    df.to_csv(outpath, index=False)
-    return outpath
-
-# -------------------------
-# Plots
-# -------------------------
-def plot_time_series(df, outdir, which=None):
+# --- Continuous-Time State Equations ---
+def f_continuous(x, u):
     """
-    which: list of column names to plot. If None, plot all except 'time'
-    Saves PNG files in outdir.
+    Continuous-time state-space model: dx/dt = f(x, u)
+    x = [x1, x2, x3] = [v_C1, v_C2, i_L]
+    u = [u1, u2, u3] = [Tx, Ty, rz]
     """
-    os.makedirs(outdir, exist_ok=True)
-    t = df['time'].values
-    if which is None:
-        which = [c for c in df.columns if c != 'time']
-    for col in which:
-        plt.figure(figsize=(8,3.5))
-        plt.plot(t, df[col].values)
-        plt.xlabel('time (s)')
-        plt.title(col)
-        plt.tight_layout()
-        p = Path(outdir) / f"time_{col}.png"
-        plt.savefig(p, dpi=200)
-        plt.close()
+    x1, x2, x3 = x
+    u1, u2, u3 = u
+    
+    i_N = i_N_func(x1) # Nonlinear current
+    
+    dx1_dt = (1/C1) * ((x2 - x1)/R - i_N + u1)
+    dx2_dt = (1/C2) * ((x1 - x2)/R + x3 + u2)
+    dx3_dt = (1/L) * (-x2 + RL * x3 + u3)
+    
+    return np.array([dx1_dt, dx2_dt, dx3_dt])
 
-def plot_phase_pairs(df, outdir, pairs=None):
-    os.makedirs(outdir, exist_ok=True)
-    if pairs is None:
-        candidates = [c for c in df.columns if c != 'time']
-        pairs = []
-        for i in range(len(candidates)):
-            for j in range(i+1, len(candidates)):
-                pairs.append((candidates[i], candidates[j]))
-    for a,b in pairs:
-        plt.figure(figsize=(5,5))
-        plt.plot(df[a].values, df[b].values, linewidth=0.5)
-        plt.xlabel(a); plt.ylabel(b)
-        plt.title(f"{a} vs {b}")
-        plt.tight_layout()
-        p = Path(outdir) / f"phase_{a}_vs_{b}.png"
-        plt.savefig(p, dpi=200)
-        plt.close()
-
-# -------------------------
-# FFT and spectrogram
-# -------------------------
-def compute_psd(x, fs):
+# --- Discrete-Time State Transition (Forward Euler) ---
+def f_discrete_euler(x, u):
     """
-    Return frequencies and one-sided PSD via welch.
+    Discrete-time state transition function: x_k+1 = F(x_k, u_k)
+    Uses Forward Euler: x_k+1 = x_k + Ts * f(x_k, u_k)
     """
-    f, Pxx = signal.welch(x, fs=fs, nperseg=min(1024, len(x)))
-    return f, Pxx
+    return x + Ts * f_continuous(x, u)
 
-def plot_fft(x, fs, outpath, title='FFT'):
-    n = len(x)
-    freqs = rfftfreq(n, d=1.0/fs)
-    X = rfft(x * np.hanning(n))
-    mag = np.abs(np.array(X)) / n
-    plt.figure(figsize=(6,3.5))
-    plt.semilogy(freqs, mag)
-    plt.xlabel('Hz')
-    plt.title(title)
-    plt.tight_layout()
-    plt.savefig(outpath, dpi=200)
-    plt.close()
-
-def plot_spectrogram(x, fs, outpath, nperseg=256):
-    f, t_spec, Sxx = signal.spectrogram(x, fs=fs, nperseg=nperseg)
-    plt.figure(figsize=(7,3.5))
-    plt.pcolormesh(t_spec, f, 10*np.log10(Sxx+1e-20), shading='gouraud')
-    plt.ylabel('Frequency [Hz]')
-    plt.xlabel('Time [sec]')
-    plt.title('Spectrogram')
-    plt.colorbar(label='dB')
-    plt.tight_layout()
-    plt.savefig(outpath, dpi=200)
-    plt.close()
-
-# -------------------------
-# Embedding (Takens) & plotting
-# -------------------------
-def takens_embedding(x, dim, delay):
+# --- Measurement Function ---
+def h_measurement(x):
     """
-    Return embedded matrix of shape (N - (dim-1)*delay, dim)
+    Measurement function: y_k = h(x_k)
+    We measure y = [v_C2, i_L] = [x2, x3]
     """
-    N = len(x)
-    M = N - (dim - 1) * delay
-    if M <= 0:
-        raise ValueError("Time series too short for requested embedding")
-    emb = np.zeros((M, dim))
-    for i in range(dim):
-        emb[:, i] = x[i*delay : i*delay + M]
-    return emb
+    return np.array([x[1], x[2]])
 
-def plot_embedding(emb, outpath, comps=(0,1,2)):
-    plt.figure(figsize=(6,6))
-    if emb.shape[1] >= 3 and len(comps) >= 3:
-        ax = plt.figure().add_subplot(111, projection='3d')
-        ax.plot(emb[:, comps[0]], emb[:, comps[1]], emb[:, comps[2]], lw=0.3)
-        ax.set_xlabel(f"dim{comps[0]}")
-        ax.set_ylabel(f"dim{comps[1]}")
-        ax.set_zlabel(f"dim{comps[2]}")
-    else:
-        plt.plot(emb[:,0], emb[:,1], lw=0.3)
-        plt.xlabel('dim0'); plt.ylabel('dim1')
-    plt.tight_layout()
-    plt.savefig(outpath, dpi=200)
-    plt.close()
+# Measurement Jacobian (H) - Constant since h is linear
+H_matrix = np.array([
+    [0., 1., 0.],
+    [0., 0., 1.]
+])
 
-# -------------------------
-# Rosenstein LLE estimator (simple)
-# -------------------------
-def estimate_lyapunov_rosenstein(x, emb_dim=6, delay=10, fs=100.0, max_t=50):
+# --- EKF State Transition Jacobian (A) ---
+def get_jacobian_A(x):
     """
-    Rough largest Lyapunov exponent estimator following Rosenstein et al. 1993.
-    Returns (times, avg_divergence, slope_est)
-    Notes:
-      - x : 1D array
-      - emb_dim, delay: embedding parameters
-      - fs: sampling frequency in Hz
-      - max_t: maximum number of time steps to follow a neighbor (in samples)
+    Calculates the Jacobian of the discrete state transition function F
+    w.r.t. state x:  A = dF/dx
+    
+    A = I + Ts * (df/dx)
+    
+    df/dx = [ [ 1/C1*(-1/R - g(x1)), 1/(C1*R)      , 0     ],
+              [ 1/(C2*R)            , -1/(C2*R)     , 1/C2  ],
+              [ 0                   , -1/L          , RL/L  ] ]
     """
-    emb = takens_embedding(x, emb_dim, delay)
-    N = len(emb)
-    tree = KDTree(emb)
-    # nearest neighbor excluding temporally close points (Theiler window)
-    theiler = int(0.5 * fs)  # half-second default exclusion
-    neigh_idx = np.zeros(N, dtype=int)
-    for i in range(N):
-        d, idx = tree.query(emb[i], k=10)
-        # find first valid neighbor with temporal separation > theiler
-        found = False
-        for candidate in np.atleast_1d(idx):
-            if abs(candidate - i) > theiler:
-                neigh_idx[i] = candidate
-                found = True
-                break
-        if not found:
-            neigh_idx[i] = -1
-    # prepare divergence curves
-    max_t = int(max_t)
-    L = np.full((N, max_t), np.nan)
-    for i in range(N):
-        j = neigh_idx[i]
-        if j < 0:
-            continue
-        # how many steps we can follow
-        max_k = min(max_t, N - max(i, j))
-        for k in range(max_k):
-            L[i, k] = np.linalg.norm(emb[i+k] - emb[j+k])
-    # average log divergence
-    with np.errstate(invalid='ignore', divide='ignore'):
-        logL = np.log(L)
-    avg = np.nanmean(logL, axis=0)
-    times = np.arange(len(avg)) / fs
-    # linear fit to initial linear region to get slope (LLE)
-    # pick region avoiding k=0 and NaNs
-    valid = ~np.isnan(avg)
-    if np.sum(valid) < 5:
-        slope = np.nan
-    else:
-        # use first 10-30% of the series or up to 0.5*max_t
-        end = max(2, int(0.2 * len(avg)))
-        x_fit = times[1:end]
-        y_fit = avg[1:end]
-        A = np.vstack([x_fit, np.ones_like(x_fit)]).T
-        slope, intercept = np.linalg.lstsq(A, y_fit, rcond=None)[0]
-    return times, avg, slope
+    x1 = x[0]
+    
+    # Jacobian of continuous f
+    J_f = np.array([
+        [(1/C1) * (-1/R - g_func(x1)), 1/(C1*R) , 0.   ],
+        [1/(C2*R)                    , -1/(C2*R), 1/C2   ],
+        [0.                          , -1/L     , RL/L ]
+    ])
+    
+    # Jacobian of discrete F (A = I + Ts * J_f)
+    A = np.eye(3) + Ts * J_f
+    return A
 
-# -------------------------
-# Utilities
-# -------------------------
-def infer_fs_from_time(t):
-    # compute median dt and return sampling frequency
-    dt = np.diff(t)
-    med = np.median(dt)
-    if med <= 0:
-        raise ValueError("Non-positive time steps encountered")
-    return 1.0 / med
+# =============================================================================
+# 2. Data Loading
+# =============================================================================
 
-# -------------------------
-# Main CLI
-# -------------------------
-def main():
-    parser = argparse.ArgumentParser(description="Process PCChua .dat files")
-    parser.add_argument('--files', nargs='+', required=True, help='Input .dat files')
-    parser.add_argument('--summary', action='store_true', help='Print summary stats')
-    parser.add_argument('--plot', nargs='*', default=[], help='Plot tasks: all, timeseries, phase, spectrogram')
-    parser.add_argument('--fft', nargs='*', help='Columns to FFT (e.g. x y). Use "all" for all numeric except time.')
-    parser.add_argument('--embed', nargs=3, metavar=('COL','DIM','DELAY'), help='Do time-delay embedding for column')
-    parser.add_argument('--lyapunov', nargs=3, metavar=('COL','DIM','DELAY'), help='Estimate largest Lyapunov exponent for a column')
-    parser.add_argument('--outdir', default='out_chua', help='Directory to write outputs')
-    parser.add_argument('--export_csv', action='store_true', help='Export cleaned numeric CSVs')
-    args = parser.parse_args()
+def load_chua_data(filename):
+    """
+    Loads data from the specified .dat file.
+    """
+    # Column names based on the file header
+    col_names = ['time', 'x', 'y', 'z', 'xref', 'yref', 'zref', 'ux', 'uy', 'uz']
+    
+    # Load the data using pandas, skipping comments and using whitespace
+    data = pd.read_csv(
+        filename,
+        comment='#',
+        sep='\\s+',
+        header=None,
+        names=col_names
+    )
+    
+    # Extract states x = [v_C1, v_C2, i_L]
+    true_states = data[['x', 'y', 'z']].values
+    
+    # Extract measurements z = [v_C2, i_L]
+    measurements = data[['y', 'z']].values
+    
+    # Extract inputs u = [Tx, Ty, rz]
+    inputs = data[['ux', 'uy', 'uz']].values
+    
+    time = data['time'].values
+    
+    print(f"Loaded {len(data)} data points from {filename}.")
+    return time, true_states, measurements, inputs
 
-    outdir = Path(args.outdir)
-    outdir.mkdir(parents=True, exist_ok=True)
+# =============================================================================
+# 3. Extended Kalman Filter (EKF) Implementation
+# =============================================================================
 
-    for filepath in args.files:
-        print(f"Loading {filepath} ...")
-        df, meta = load_pcchua_dat(filepath)
-        basename = Path(filepath).stem
-        subdir = outdir / basename
-        subdir.mkdir(parents=True, exist_ok=True)
+def run_ekf(z_data, u_data, Q, R, x0, P0):
+    """
+    Runs the Extended Kalman Filter on the provided data.
+    
+    Args:
+        z_data (np.array): Measurement data (N_samples, 2)
+        u_data (np.array): Input data (N_samples, 3)
+        Q (np.array): Process noise covariance (3x3)
+        R (np.array): Measurement noise covariance (2x2)
+        x0 (np.array): Initial state estimate (3,)
+        P0 (np.array): Initial state covariance (3x3)
+        
+    Returns:
+        Tuple of (state_estimates, covariance_estimates, innovations)
+    """
+    N_samples = z_data.shape[0]
+    
+    # Arrays to store results
+    x_est = np.zeros((N_samples, 3))
+    P_est = np.zeros((N_samples, 3, 3))
+    innovations = np.zeros((N_samples, 2))
+    
+    # Set initial conditions
+    x_k = x0
+    P_k = P0
+    
+    for k in range(N_samples):
+        # --- PREDICT ---
+        # Project state ahead
+        x_pred = f_discrete_euler(x_k, u_data[k])
+        
+        # Get state transition Jacobian
+        A_k = get_jacobian_A(x_k)
+        
+        # Project covariance ahead
+        P_pred = A_k @ P_k @ A_k.T + Q
+        
+        # --- UPDATE ---
+        # Get measurement y_k (innovation)
+        y_k = z_data[k] - h_measurement(x_pred)
+        
+        # Get innovation covariance
+        S_k = H_matrix @ P_pred @ H_matrix.T + R
+        
+        # Get Kalman gain
+        K_k = P_pred @ H_matrix.T @ np.linalg.inv(S_k)
+        
+        # Update state estimate
+        x_k = x_pred + K_k @ y_k
+        
+        # Update covariance estimate
+        P_k = (np.eye(3) - K_k @ H_matrix) @ P_pred
+        
+        # Store results
+        x_est[k] = x_k
+        P_est[k] = P_k
+        innovations[k] = y_k
+        
+    return x_est, P_est, innovations
 
-        # export CSV if requested
-        if args.export_csv:
-            csvp = subdir / f"{basename}.csv"
-            save_csv(df, csvp)
-            print(f"Saved CSV -> {csvp}")
+# =============================================================================
+# 4. Unscented Kalman Filter (UKF) Implementation
+# =============================================================================
 
-        # summary
-        if args.summary:
-            s = summary_stats(df)
-            txt = subdir / f"{basename}_summary.txt"
-            with txt.open('w') as f:
-                f.write("Metadata:\n")
-                for k,v in meta.items():
-                    f.write(f"{k}: {v}\n")
-                f.write("\nSummary stats:\n")
-                f.write(s.to_string())
-            print(f"Wrote summary to {txt}")
+def run_ukf(z_data, u_data, Q, R, x0, P0):
+    """
+    Runs the Unscented Kalman Filter on the provided data using filterpy.
+    """
+    N_samples = z_data.shape[0]
+    
+    # Define sigma points
+    # (n=3 states, alpha=0.1 (good default), beta=2. (optimal for Gaussian), kappa=0.)
+    points = MerweScaledSigmaPoints(n=3, alpha=0.1, beta=2., kappa=0.)
+    
+    # Create UKF
+    ukf = UnscentedKalmanFilter(
+        dim_x=3,           # 3 states
+        dim_z=2,           # 2 measurements
+        dt=Ts,
+        fx=f_discrete_euler, # Discrete state transition function
+        hx=h_measurement,    # Measurement function
+        points=points
+    )
+    
+    # Set initial conditions
+    ukf.x = x0
+    ukf.P = P0
+    
+    # Set noise covariances
+    ukf.Q = Q
+    ukf.R = R
+    
+    # Arrays to store results
+    x_est = np.zeros((N_samples, 3))
+    P_est = np.zeros((N_samples, 3, 3))
+    innovations = np.zeros((N_samples, 2))
+    
+    for k in range(N_samples):
+        # Predict step. Pass input u_data[k] to fx.
+        ukf.predict(u=u_data[k])
+        
+        # Update step
+        ukf.update(z=z_data[k])
+        
+        # Store results
+        x_est[k] = ukf.x.copy()
+        P_est[k] = ukf.P.copy()
+        innovations[k] = ukf.y.copy() # .y is the innovation (residual)
+        
+    return x_est, P_est, innovations
 
-        # infer fs
-        try:
-            fs = infer_fs_from_time(df['time'].values)
-        except Exception:
-            fs = None
+# =============================================================================
+# 5. Helper Functions for Analysis
+# =============================================================================
 
-        # plotting modes
-        plot_modes = set(args.plot or [])
-        if 'all' in plot_modes or 'timeseries' in plot_modes:
-            cols = [c for c in df.columns if c != 'time']
-            plot_time_series(df, subdir, which=cols)
-            print(f"Saved time-series plots for {basename}")
+def plot_results(time, true_x1, estimates, P_estimates, title):
+    """
+    Plots the true vs estimated v_C1 (x1) and the estimation error.
+    """
+    est_x1 = estimates[:, 0]
+    err = true_x1 - est_x1
+    
+    # Get 3-sigma confidence bounds
+    std_x1 = np.sqrt(P_estimates[:, 0, 0])
+    upper_bound = est_x1 + 3 * std_x1
+    lower_bound = est_x1 - 3 * std_x1
+    
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
+    fig.suptitle(title, fontsize=16)
+    
+    # --- Plot 1: True vs Estimated State ---
+    ax1.plot(time, true_x1, 'k-', label='True $v_{C1} (x_1)$')
+    ax1.plot(time, est_x1, 'r--', label='Estimated $v_{C1}$')
+    ax1.fill_between(time, lower_bound, upper_bound, color='r', alpha=0.2, label='3-sigma Confidence')
+    ax1.set_ylabel('Voltage (V)')
+    ax1.legend()
+    ax1.grid(True)
+    
+    # --- Plot 2: Estimation Error ---
+    ax2.plot(time, err, 'b-', label='Error ($v_{C1} - \\hat{v}_{C1}$)')
+    ax2.set_xlabel('Time (s)')
+    ax2.set_ylabel('Error (V)')
+    ax2.legend()
+    ax2.grid(True)
+    
+    plt.tight_layout(rect=(0, 0.03, 1, 0.95))
 
-        if 'all' in plot_modes or 'phase' in plot_modes:
-            pairs = [('x','y'), ('x','z'), ('y','z')]
-            # fallback: only existing columns
-            existing_pairs = [(a,b) for (a,b) in pairs if a in df.columns and b in df.columns]
-            plot_phase_pairs(df, subdir, pairs=existing_pairs)
-            print(f"Saved phase plots for {basename}")
+def plot_innovations_and_acf(innovations, dt, title):
+    """
+    Plots the innovations (residuals) and their autocorrelation.
+    """
+    fig, (ax1, ax2) = plt.subplots(2, 2, figsize=(14, 8))
+    fig.suptitle(title, fontsize=16)
+    
+    time = np.arange(len(innovations)) * dt
+    
+    # --- Plot 1: Innovation for y1 (v_C2) ---
+    ax1[0].plot(time, innovations[:, 0])
+    ax1[0].set_title('Innovation for $y_1$ ($v_{C2}$)')
+    ax1[0].set_ylabel('Innovation (V)')
+    ax1[0].grid(True)
+    
+    # --- Plot 2: Innovation for y2 (i_L) ---
+    ax1[1].plot(time, innovations[:, 1])
+    ax1[1].set_title('Innovation for $y_2$ ($i_L$)')
+    ax1[1].set_ylabel('Innovation (A)')
+    ax1[1].grid(True)
+    
+    # --- Plot 3: ACF for y1 ---
+    plot_acf(innovations[:, 0], lags=50, ax=ax2[0], title='ACF for $y_1$ Innovation')
+    ax2[0].set_xlabel('Lags')
+    
+    # --- Plot 4: ACF for y2 ---
+    plot_acf(innovations[:, 1], lags=50, ax=ax2[1], title='ACF for $y_2$ Innovation')
+    ax2[1].set_xlabel('Lags')
+    
+    plt.tight_layout(rect=(0, 0.03, 1, 0.95))
 
-        if 'all' in plot_modes or 'spectrogram' in plot_modes:
-            for col in [c for c in df.columns if c != 'time']:
-                if fs is None:
-                    continue
-                try:
-                    plot_spectrogram(df[col].values, fs, subdir / f"spect_{col}.png")
-                except Exception as e:
-                    print("Spectrogram failed for", col, e)
-            print(f"Saved spectrograms for {basename}")
+# =============================================================================
+# 6. Main Execution
+# =============================================================================
 
-        # FFT
-        if args.fft:
-            fft_cols = args.fft
-            if 'all' in fft_cols:
-                fft_cols = [c for c in df.columns if c != 'time']
-            if fs is None:
-                print("Warning: sampling frequency could not be inferred. FFT may be incorrect.")
-            for col in fft_cols:
-                if col not in df.columns:
-                    print(f"Column {col} not in {basename}; skipping FFT")
-                    continue
-                try:
-                    plot_fft(df[col].values, fs or 1.0, subdir / f"fft_{col}.png", title=f"{basename} {col} FFT")
-                except Exception as e:
-                    print("FFT failed for", col, e)
-            print(f"Saved FFTs for {basename}")
+if __name__ == "__main__":
+    
+    # --- Configuration ---
+    FILENAME = 'pcchua_dados.dat'  # or 'pcchua_pert.dat'
+    
+    # --- Load Data ---
+    time, true_states, measurements, inputs = load_chua_data(FILENAME)
+    
+    # --- Tuning Parameters ---
+    
+    # Process Noise Covariance (Q)
+    # How much do we trust our model? (dx/dt = f(x,u))
+    # Higher values = model is noisy/inaccurate.
+    # Start with small values.
+    q_val = 1e-7
+    Q = np.diag([q_val, q_val, q_val])
+    
+    # Measurement Noise Covariance (R)
+    # How much do we trust our measurements? (y = [v_C2, i_L])
+    # Higher values = sensors are noisy.
+    # We can estimate this from the sensor datasheet or data.
+    r_val_v = 1e-4  # Variance for v_C2
+    r_val_i = 1e-5  # Variance for i_L
+    R = np.diag([r_val_v, r_val_i])
+    
+    # --- Initial Conditions ---
+    
+    # Initial state estimate: [v_C1, v_C2, i_L]
+    # We don't know v_C1, so we guess 0.
+    # We *do* know v_C2 and i_L from the first measurement.
+    x0 = np.array([0.0, measurements[0, 0], measurements[0, 1]])
+    
+    # Initial Covariance (P0)
+    # How sure are we of our initial state?
+    # High variance for unknown v_C1, low variance for "known" v_C2, i_L.
+    P0 = np.diag([1.0, 1e-4, 1e-4])
 
-        # embedding
-        if args.embed:
-            col, dim_s, delay_s = args.embed
-            dim = int(dim_s); delay = int(delay_s)
-            if col not in df.columns:
-                print(f"Embed column {col} not found in {basename}")
-            else:
-                emb = takens_embedding(df[col].values, dim, delay)
-                plot_path = subdir / f"embed_{col}_d{dim}_tau{delay}.png"
-                plot_embedding(emb, plot_path)
-                np.save(subdir / f"embed_{col}_d{dim}_tau{delay}.npy", emb)
-                print(f"Wrote embedding and plot for {col}")
-
-        # lyapunov
-        if args.lyapunov:
-            col, dim_s, delay_s = args.lyapunov
-            dim = int(dim_s); delay = int(delay_s)
-            if col not in df.columns:
-                print(f"Lyapunov column {col} not found in {basename}")
-            else:
-                times, avg, slope = estimate_lyapunov_rosenstein(df[col].values, emb_dim=dim, delay=delay, fs=float(fs or 1.0), max_t=200)
-                # save divergence curve
-                np.savetxt(subdir / f"lyap_{col}_curve.txt", np.vstack([times, avg]).T)
-                with (subdir / f"lyap_{col}_report.txt").open('w') as f:
-                    f.write(f"Estimated LLE (slope) = {slope}\n")
-                    f.write(f"Embedding dim={dim}, delay={delay}, fs={fs}\n")
-                print(f"Lyapunov estimation done for {col}. slope={slope}")
-
-    print("Done.")
-
-if __name__ == '__main__':
-    main()
+    
+    print("\n--- Running Extended Kalman Filter (EKF) ---")
+    x_est_ekf, P_est_ekf, innov_ekf = run_ekf(measurements, inputs, Q, R, x0, P0)
+    print("EKF complete.")
+    
+    print("\n--- Running Unscented Kalman Filter (UKF) ---")
+    x_est_ukf, P_est_ukf, innov_ukf = run_ukf(measurements, inputs, Q, R, x0, P0)
+    print("UKF complete.")
+    
+    # --- Plot EKF Results ---
+    plot_results(time, true_states[:, 0], x_est_ekf, P_est_ekf, 
+                 f'EKF Estimation for $v_{C1}$ (Q={q_val:.1e}, R=[{r_val_v:.1e}, {r_val_i:.1e}])')
+    
+    plot_innovations_and_acf(innov_ekf, Ts, 'EKF Innovation Analysis')
+    
+    # --- Plot UKF Results ---
+    plot_results(time, true_states[:, 0], x_est_ukf, P_est_ukf, 
+                 f'UKF Estimation for $v_{C1}$ (Q={q_val:.1e}, R=[{r_val_v:.1e}, {r_val_i:.1e}])')
+    
+    plot_innovations_and_acf(innov_ukf, Ts, 'UKF Innovation Analysis')
+    
+    print("\nDisplaying plots...")
+    plt.show()
