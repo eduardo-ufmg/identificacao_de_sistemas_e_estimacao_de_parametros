@@ -240,6 +240,12 @@ def optimize_parameters(u, y, order, n_splits=5, verbose=True):
     a_grid = np.linspace(0.1, 0.9, 9)  # 9 values from 0.1 to 0.9
     M_grid = [3, 4, 5, 6, 7, 8, 10, 12]  # different basis counts
     alpha_grid = [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0]  # regularization strengths
+
+    # reduce grid size for higher orders to limit computation
+    if order == 3:
+        a_grid = np.linspace(0.3, 0.7, 5)  # 5 values from 0.3 to 0.7
+        M_grid = [4, 6, 8, 10]
+        alpha_grid = [1e-5, 1e-4, 1e-3, 1e-2]
     
     best_score = np.inf
     best_params = None
