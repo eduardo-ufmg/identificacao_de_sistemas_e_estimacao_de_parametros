@@ -10,12 +10,13 @@ x0 = 38.07; y0 = -19.52; theta0 = 0;
 res = 0.0962;
 ml = mapaLaser('icex_2.pgm',res);
 
-%as 3 primeiras colunas são a odometria
+%as 3 primeiras colunas são a odometria (incrementos/deslocamentos)
 x_odo = dadosMod(:,1);
 y_odo = dadosMod(:,2);
 theta_odo = dadosMod(:,3);
-%transforma a odometria de volta em "velocidades"
-delta_odo = [[x_odo(1); diff(x_odo)], [y_odo(1); diff(y_odo)], [theta_odo(1); diff(theta_odo)]];
+%transforma a odometria em "velocidades"
+% os dados de odometria já são incrementos, não posições acumuladas
+delta_odo = [x_odo, y_odo, theta_odo];
 w = delta_odo(:,3)/0.1; %velocidadade angular é só pegar e dividir a variação do theta
 %a velocidade tangencial, acredito que o robô não utilizou velocidades negativas em nenhum momento, mas vamos testar
 v = zeros(size(w,1),1);
@@ -24,8 +25,8 @@ for i = 1:numel(v)
 end
 
 
-%rode o comando abaixo para conferir - não dá 100% igual não, mas atende muito bem o que a gente precisa! Vamos considerar estes dados então
-%%confere se reconstrói a odometria
+%rode o comando abaixo para conferir - reconstrói a trajetória a partir das velocidades
+%%confere se reconstrói a odometria acumulada
 %xt = zeros(size(v,1),1);
 %yt = zeros(size(v,1),1);
 %thetat = zeros(size(v,1),1);
@@ -40,7 +41,10 @@ end
 %    thetat(i) = thetat(i-1) + 0.1*w(i);
 %end
 %
-%%figure(1); ml.draw; hold on; plot(x_odo,y_odo,'b',xt,yt,'r'); hold off;
+% reconstrói odometria acumulada para comparar
+%x_odo_acum = x0 + cumsum(x_odo);
+%y_odo_acum = y0 + cumsum(y_odo);
+%%figure(1); ml.draw; hold on; plot(x_odo_acum,y_odo_acum,'b',xt,yt,'r'); hold off;
 
 %as 3 colunas seguintes são a localização estimada via AMCL (deve ser usada
 %como "ground truth" para comparação)

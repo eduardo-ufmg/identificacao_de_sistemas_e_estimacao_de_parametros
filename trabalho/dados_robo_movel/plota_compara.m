@@ -11,17 +11,21 @@ ytam = 0.0962*810; xtam = 0.0962*1654;
 mapa = obstaclesImg('icex_2.pgm',[-xtam/2, xtam/2],[-ytam/2,ytam/2]);
 figure(1); mapa.draw; hold on; plot(x0,y0,'r*'); hold off;
 
-%as 3 primeiras colunas são a odometria
+%as 3 primeiras colunas são a odometria (incrementos)
 x_odo = dadosMod(:,1);
 y_odo = dadosMod(:,2);
 theta_odo = dadosMod(:,3);
+
+%acumula a odometria para obter trajetória
+x_odo_acum = x0 + cumsum(x_odo);
+y_odo_acum = y0 + cumsum(y_odo);
 
 %as 3 colunas seguintes são a localização estimada via AMCL (deve ser usada
 %como "ground truth" para comparação)
 x_amcl = dadosMod(:,4);
 y_amcl = dadosMod(:,5);
 theta_amcl = dadosMod(:,6);
-figure(2); mapa.draw; hold on; plot(x0+x_odo,y0+y_odo,'b',x_amcl,y_amcl,'r'); hold off;
+figure(2); mapa.draw; hold on; plot(x_odo_acum,y_odo_acum,'b',x_amcl,y_amcl,'r'); hold off;
 
 %as 361 colunas seguintes representam a leitura do laser (SICK LMS200)
 %as leituras do laser variam de 0.5 em 0.5 grau - resolução = pi/360
