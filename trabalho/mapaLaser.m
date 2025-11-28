@@ -4,7 +4,7 @@ classdef mapaLaser < handle
         map; % mapa da imagem para exibicao (com o u invertido)
         xlimits, ylimits; % dimesoes em metros
         ncol, nrow; % numero de colunas e linhas da imagem
-        resolution; %resoluï¿½ï¿½o do mapa
+        resolution; %resolução do mapa
     end
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     methods
@@ -85,18 +85,13 @@ classdef mapaLaser < handle
         function c = checkPoint(this, p)
             % posicao de colisao na imagem
             [col, lin] = this.mts2px(p(1), p(2));
-            % verifica se o ponto esta dentro dos limites
-            if col < 1 || col > this.ncol || lin < 1 || lin > this.nrow
-                c = 1; % fora do mapa = obstaculo
-                return;
-            end
             c = 1 - this.map(lin,col);
         end
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        % simula laser para uma dada posiï¿½ï¿½o no mapa
+        % simula laser para uma dada posição no mapa
         function laser = simLaser(this, p, r, r_res, radMin, radMax, npt)
-            %ï¿½ngulos a se testar
-            ang = linspace(radMin,radMax,npt) + p(3); %leva em consideraï¿½ï¿½o orientaï¿½ï¿½o do robï¿½
+            %ângulos a se testar
+            ang = linspace(radMin,radMax,npt) + p(3); %leva em consideração orientação do robô
             laser = r*ones(1,npt);
             for i = 1:npt
                 raio_teste = 0:r_res:r;
@@ -104,11 +99,6 @@ classdef mapaLaser < handle
                     xt = p(1) + rd*cos(ang(i));
                     yt = p(2) + rd*sin(ang(i));
                     [xp, yp] = this.mts2px(xt, yt);
-                    % verifica se o ponto esta dentro dos limites
-                    if xp < 1 || xp > this.ncol || yp < 1 || yp > this.nrow
-                        laser(i) = rd; % limite do mapa
-                        break;
-                    end
                     if this.map(yp,xp) < 1
                         laser(i) = rd; 
                         break;
