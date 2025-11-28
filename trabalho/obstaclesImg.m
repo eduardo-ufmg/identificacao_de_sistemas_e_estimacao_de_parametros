@@ -7,6 +7,7 @@ classdef obstaclesImg < handle
         obstacles;
         points;
         order;
+        dx, dy;
     end
 
     methods
@@ -16,6 +17,9 @@ classdef obstaclesImg < handle
 
             this.xlimits = xlimits;
             this.ylimits = ylimits;
+            
+            this.dx = xlimits(2) - xlimits(1);
+            this.dy = ylimits(2) - ylimits(1);
 
 
             I = double(imread(image));
@@ -51,10 +55,8 @@ classdef obstaclesImg < handle
             [col, lin] = this.mts2px(p(1), p(2));
 
 
-            dx = this.xlimits(2) - this.xlimits(1);
-            dy = this.ylimits(2) - this.ylimits(1);
-            robCol = floor(robotSize*(this.ncol/dx));
-            robRow = floor(robotSize*(this.nrow/dy));
+            robCol = floor(robotSize*(this.ncol/this.dx));
+            robRow = floor(robotSize*(this.nrow/this.dy));
 
 
             try
@@ -77,21 +79,15 @@ classdef obstaclesImg < handle
 
         function [xm, ym] = px2mts(this, xp, yp)
 
-            dx = this.xlimits(2) - this.xlimits(1);
-            dy = this.ylimits(2) - this.ylimits(1);
-
-            xm = xp*(dx/this.ncol) + this.xlimits(1);
-            ym = yp*(dy/this.nrow) + this.ylimits(1);
+            xm = xp*(this.dx/this.ncol) + this.xlimits(1);
+            ym = yp*(this.dy/this.nrow) + this.ylimits(1);
         end
 
         function [xp, yp] = mts2px(this, xm, ym)
 
-            dx = this.xlimits(2) - this.xlimits(1);
-            dy = this.ylimits(2) - this.ylimits(1);
-
-            xp = (xm - this.xlimits(1))*(this.ncol/dx);
+            xp = (xm - this.xlimits(1))*(this.ncol/this.dx);
             xp = round(xp);
-            yp = (ym - this.ylimits(1))*(this.nrow/dy);
+            yp = (ym - this.ylimits(1))*(this.nrow/this.dy);
             yp = round(yp);
         end
 

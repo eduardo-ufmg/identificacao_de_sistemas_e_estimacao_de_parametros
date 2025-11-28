@@ -1,6 +1,6 @@
 clearvars; close all; clc;
 
-load data.mat;
+load sensorData.mat;
 
 x0 = 38.07; y0 = -19.52; theta0 = 0;
 
@@ -26,7 +26,7 @@ for i = 1:size(laser,2)
     plot(xl,yl,'.r');
 end
 
-ml = mapLaser('icex_2.pgm',0.0962);
+ml = laserMap('icex_2.pgm',0.0962);
 
 l0 = ml.simLaser([x0; y0; theta0],max(max(laser)),0.0962,-pi/2,pi/2,361);
 

@@ -5,6 +5,7 @@ classdef laserMap < handle
         xlimits, ylimits;
         ncol, nrow;
         resolution;
+        dx, dy;
     end
 
     methods
@@ -37,25 +38,22 @@ classdef laserMap < handle
             this.xlimits = resolution*0.5*[-this.ncol, this.ncol];
             this.ylimits = resolution*0.5*[-this.nrow, this.nrow];
             this.resolution = resolution;
+            
+            this.dx = this.xlimits(2) - this.xlimits(1);
+            this.dy = this.ylimits(2) - this.ylimits(1);
         end
 
         function [xm, ym] = px2mts(this, xp, yp)
 
-            dx = this.xlimits(2) - this.xlimits(1);
-            dy = this.ylimits(2) - this.ylimits(1);
-
-            xm = xp*(dx/this.ncol) + this.xlimits(1);
-            ym = yp*(dy/this.nrow) + this.ylimits(1);
+            xm = xp*(this.dx/this.ncol) + this.xlimits(1);
+            ym = yp*(this.dy/this.nrow) + this.ylimits(1);
         end
 
         function [xp, yp] = mts2px(this, xm, ym)
 
-            dx = this.xlimits(2) - this.xlimits(1);
-            dy = this.ylimits(2) - this.ylimits(1);
-
-            xp = (xm - this.xlimits(1))*(this.ncol/dx);
+            xp = (xm - this.xlimits(1))*(this.ncol/this.dx);
             xp = round(xp);
-            yp = (ym - this.ylimits(1))*(this.nrow/dy);
+            yp = (ym - this.ylimits(1))*(this.nrow/this.dy);
             yp = round(yp);
         end
 
@@ -83,7 +81,11 @@ classdef laserMap < handle
         end
 
         function laser = simLaser(this, p, r, r_res, radMin, radMax, npt)
-
+            % Validate inputs
+            assert(r > 0, 'Range must be positive');
+            assert(r_res > 0 && r_res < r, 'Invalid resolution: must be positive and less than range');
+            assert(npt > 0, 'Number of points must be positive');
+            
             ang = linspace(radMin,radMax,npt) + p(3);
             laser = r*ones(1,npt);
             for i = 1:npt
