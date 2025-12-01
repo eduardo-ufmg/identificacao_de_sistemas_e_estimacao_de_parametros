@@ -85,7 +85,7 @@ classdef laserMap < handle
             assert(r > 0, 'Range must be positive');
             assert(r_res > 0 && r_res < r, 'Invalid resolution: must be positive and less than range');
             assert(npt > 0, 'Number of points must be positive');
-            
+
             ang = linspace(radMin,radMax,npt) + p(3);
             laser = r*ones(1,npt);
             for i = 1:npt
@@ -94,6 +94,12 @@ classdef laserMap < handle
                     xt = p(1) + rd*cos(ang(i));
                     yt = p(2) + rd*sin(ang(i));
                     [xp, yp] = this.mts2px(xt, yt);
+                    % Guard against out-of-bounds indices
+                    if xp < 1 || xp > this.ncol || yp < 1 || yp > this.nrow
+                        % Ray left the known map; treat as max range
+                        laser(i) = r;
+                        break;
+                    end
                     if this.map(yp,xp) < 1
                         laser(i) = rd;
                         break;
