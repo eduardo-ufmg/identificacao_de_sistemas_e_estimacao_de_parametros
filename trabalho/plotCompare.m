@@ -1,5 +1,3 @@
-clearvars; close all; clc;
-
 load sensorData.mat;
 
 x0 = 38.07; y0 = -19.52; theta0 = 0;
