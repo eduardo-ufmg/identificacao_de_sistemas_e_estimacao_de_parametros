@@ -73,7 +73,12 @@ classdef laserMap < handle
         function c = checkPoint(this, p)
 
             [col, lin] = this.mts2px(p(1), p(2));
-            c = 1 - this.map(lin,col);
+            % Check bounds before accessing map
+            if col >= 1 && col <= this.ncol && lin >= 1 && lin <= this.nrow
+                c = 1 - this.map(lin,col);
+            else
+                c = 1; % Out of bounds treated as occupied
+            end
         end
 
         function laser = simLaser(this, p, r, r_res, radMin, radMax, npt)
@@ -86,9 +91,12 @@ classdef laserMap < handle
                     xt = p(1) + rd*cos(ang(i));
                     yt = p(2) + rd*sin(ang(i));
                     [xp, yp] = this.mts2px(xt, yt);
-                    if this.map(yp,xp) < 1
-                        laser(i) = rd;
-                        break;
+                    % Check bounds before accessing map
+                    if xp >= 1 && xp <= this.ncol && yp >= 1 && yp <= this.nrow
+                        if this.map(yp,xp) < 1
+                            laser(i) = rd;
+                            break;
+                        end
                     end
                 end
             end

@@ -21,8 +21,8 @@ laser = data(:,7:end); dlaser = pi/360;
 figure(3); map.draw; hold on;
 for i = 1:size(laser,2)
     thetal = theta0 - pi/2;
-    xl = x0 + laser(1,i)*cos(thetal + (i-1)*dlaser);
-    yl = y0 + laser(1,i)*sin(thetal + (i-1)*dlaser);
+    xl = x0 + laser(end,i)*cos(thetal + (i-1)*dlaser);
+    yl = y0 + laser(end,i)*sin(thetal + (i-1)*dlaser);
     plot(xl,yl,'.r');
 end
 

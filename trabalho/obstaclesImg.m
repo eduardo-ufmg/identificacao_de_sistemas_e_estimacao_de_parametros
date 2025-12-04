@@ -46,6 +46,12 @@ classdef obstaclesImg < handle
             robCol = floor(robotSize*(this.ncol/dx));
             robRow = floor(robotSize*(this.nrow/dy));
 
+            % Check bounds before accessing map
+            if (lin-robRow) < 1 || (lin+robRow) > this.nrow || (col-robCol) < 1 || (col+robCol) > this.ncol
+                c = true;
+                return;
+            end
+
             try
 
                 robot = this.map(lin-robRow:lin+robRow, col-robCol:col+robCol);
