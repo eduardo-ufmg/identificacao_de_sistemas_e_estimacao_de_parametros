@@ -1,9 +1,9 @@
 import numpy as np
 
-class OdometryModel:
+class OdometryStaticModel:
     def __init__(self, initial_pose=(0, 0, 0)):
         """
-        Initialize the odometry model.
+        Initialize the odometry static model.
         
         Args:
             initial_pose: tuple (x, y, theta) representing initial position and orientation

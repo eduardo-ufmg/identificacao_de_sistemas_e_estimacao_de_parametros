@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.image import imread
-from OdometryModel import OdometryModel
+from OdometryStaticModel import OdometryStaticModel
 import os
 import json
 
@@ -12,8 +12,8 @@ ref_y = ref_data[:, 1]
 ref_angle = ref_data[:, 2]
 
 # Load and compute odometry positions
-odo_model = OdometryModel(initial_pose=(ref_x[0], ref_y[0], ref_angle[0]))
-odo_data = OdometryModel.load_from_csv('odo.csv')
+odo_model = OdometryStaticModel(initial_pose=(ref_x[0], ref_y[0], ref_angle[0]))
+odo_data = OdometryStaticModel.load_from_csv('odo.csv')
 odo_positions = odo_model.compute_positions(odo_data)
 odo_x = odo_positions[:, 0]
 odo_y = odo_positions[:, 1]
@@ -43,9 +43,6 @@ if os.path.exists(map_file):
         
         # Display map with appropriate extent
         ax.imshow(map_image, extent=map_extent, alpha=0.6, cmap='gray')
-        ax.text(0.02, 0.02, 'Map overlaid from map.png', transform=ax.transAxes,
-                fontsize=10, verticalalignment='bottom', alpha=0.7,
-                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
     except Exception as e:
         print(f"Warning: Could not load map image: {e}")
         print("Continuing without map background...")
@@ -81,7 +78,7 @@ ax.plot(odo_x[-1], odo_y[-1], 'c^', markersize=14, label='Odo End', zorder=5, ma
 # Labels and formatting
 ax.set_xlabel('X Position (m)', fontsize=12, fontweight='bold')
 ax.set_ylabel('Y Position (m)', fontsize=12, fontweight='bold')
-ax.set_title('Robot Trajectory Comparison: Reference vs Odometry (Overlaid on Map)', fontsize=14, fontweight='bold')
+ax.set_title('Robot Trajectory Comparison: Reference vs Odometry', fontsize=14, fontweight='bold')
 ax.grid(True, alpha=0.3)
 ax.legend(loc='best', fontsize=11, framealpha=0.95)
 ax.axis('equal')
