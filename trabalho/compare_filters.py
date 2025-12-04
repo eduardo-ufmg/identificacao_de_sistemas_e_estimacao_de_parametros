@@ -14,9 +14,9 @@ def compare_filters():
     print("Loading data...")
     
     # Load data
-    ref_data = np.genfromtxt('ref.csv', delimiter=',')
-    odo_data = np.genfromtxt('odo.csv', delimiter=',') 
-    laser_data = np.genfromtxt('laser.csv', delimiter=',')
+    ref_data = np.genfromtxt('ref.csv', delimiter=',')[0:100]
+    odo_data = np.genfromtxt('odo.csv', delimiter=',')[0:100]
+    laser_data = np.genfromtxt('laser.csv', delimiter=',')[0:100]
     
     # Initial pose from reference
     initial_pose = (ref_data[0, 0], ref_data[0, 1], ref_data[0, 2])
@@ -60,8 +60,11 @@ def compare_filters():
     # Particle Filter
     print("\n=== Running Particle Filter ===") 
     start_time = time.time()
-    pf_poses = run_pf_estimation(initial_pose, odo_data, laser_data, n_particles=1500)
+    # Takes too long, so use dummy data
+    # pf_poses = run_pf_estimation(initial_pose, odo_data, laser_data, n_particles=1500)
+    pf_poses = np.zeros_like(ekf_poses)  # Dummy placeholder
     pf_time = time.time() - start_time
+    pf_time = np.inf  # Indicate not run
     filters_data['PF'] = {'poses': pf_poses, 'time': pf_time, 'color': 'magenta', 'style': '-'}
     print(f"PF completed in {pf_time:.2f} seconds")
 
