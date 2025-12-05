@@ -13,13 +13,14 @@ from scipy.ndimage import distance_transform_edt
 
 
 class ExtendedKalmanFilter:
-    def __init__(self, map_file='map.png', map_info_file='map_info.json'):
+    def __init__(self, map_file='map.png', map_info_file='map_info.json', config=None):
         """
         Initialize the Extended Kalman Filter.
         
         Args:
             map_file: Path to the map image
             map_info_file: Path to map metadata JSON
+            config: Dictionary with tunable parameters
         """
         # State: [x, y, theta]
         self.state = np.zeros(3)
@@ -50,14 +51,23 @@ class ExtendedKalmanFilter:
         self.laser_angles = np.linspace(0, 2*np.pi, self.num_laser_readings)
         self.max_laser_range = 8.183
         
-        # Process noise covariance (odometry uncertainty)
-        self.Q = np.diag([0.01, 0.01, 0.005])**2
+        # Process noise covariance (odometry uncertainty) - tunable
+        if config and 'Q_x' in config:
+            self.Q = np.diag([config['Q_x'], config['Q_y'], config['Q_theta']])**2
+        else:
+            self.Q = np.diag([0.01, 0.01, 0.005])**2
         
-        # Measurement noise covariance (laser uncertainty)
-        self.R_laser = 0.05**2  # per laser reading
+        # Measurement noise covariance (laser uncertainty) - tunable
+        if config and 'R_laser' in config:
+            self.R_laser = config['R_laser']**2
+        else:
+            self.R_laser = 0.05**2  # per laser reading
         
-        # Use subset of laser beams for efficiency
-        self.laser_indices = np.arange(0, self.num_laser_readings, 15)  # Every 15th beam
+        # Use subset of laser beams for efficiency - tunable
+        if config and 'laser_beam_skip' in config:
+            self.laser_indices = np.arange(0, self.num_laser_readings, config['laser_beam_skip'])
+        else:
+            self.laser_indices = np.arange(0, self.num_laser_readings, 15)  # Every 15th beam
         
     def initialize(self, initial_state, initial_covariance):
         """

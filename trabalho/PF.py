@@ -14,7 +14,8 @@ from OdometryDynamicModel import OdometryDynamicModel
 
 
 class ParticleFilter:
-    def __init__(self, num_particles=1000, map_file='map.png', map_info_file='map_info.json'):
+    def __init__(self, num_particles=1000, map_file='map.png', map_info_file='map_info.json', 
+                 config=None):
         """
         Initialize the Particle Filter.
         
@@ -22,6 +23,7 @@ class ParticleFilter:
             num_particles: Number of particles to use
             map_file: Path to the map image
             map_info_file: Path to map metadata JSON
+            config: Dictionary with tunable parameters
         """
         self.num_particles = num_particles
         
@@ -54,14 +56,25 @@ class ParticleFilter:
         self.particles = np.zeros((num_particles, 3))
         self.weights = np.ones(num_particles) / num_particles
         
-        # Process noise (odometry uncertainty)
-        self.motion_noise_std = np.array([0.05, 0.05, 0.02])  # [x, y, theta]
+        # Process noise (odometry uncertainty) - tunable
+        if config and 'motion_noise_x' in config:
+            self.motion_noise_std = np.array([config['motion_noise_x'], 
+                                             config['motion_noise_y'], 
+                                             config['motion_noise_theta']])
+        else:
+            self.motion_noise_std = np.array([0.05, 0.05, 0.02])  # [x, y, theta]
         
-        # Measurement noise
-        self.laser_noise_std = 0.1  # meters
+        # Measurement noise - tunable
+        if config and 'laser_noise_std' in config:
+            self.laser_noise_std = config['laser_noise_std']
+        else:
+            self.laser_noise_std = 0.1  # meters
         
-        # Effective sample size threshold for resampling
-        self.resample_threshold = 0.5
+        # Effective sample size threshold for resampling - tunable
+        if config and 'resample_threshold' in config:
+            self.resample_threshold = config['resample_threshold']
+        else:
+            self.resample_threshold = 0.5
         
     def initialize_particles(self, initial_pose, initial_uncertainty):
         """

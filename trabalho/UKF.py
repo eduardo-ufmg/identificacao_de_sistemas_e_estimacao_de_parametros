@@ -14,23 +14,29 @@ from scipy.ndimage import distance_transform_edt
 
 
 class UnscentedKalmanFilter:
-    def __init__(self, map_file='map.png', map_info_file='map_info.json'):
+    def __init__(self, map_file='map.png', map_info_file='map_info.json', config=None):
         """
         Initialize the Unscented Kalman Filter.
         
         Args:
             map_file: Path to the map image
             map_info_file: Path to map metadata JSON
+            config: Dictionary with tunable parameters
         """
         # State: [x, y, theta]
         self.n_state = 3
         self.state = np.zeros(self.n_state)
         self.covariance = np.eye(self.n_state)
         
-        # UKF parameters
-        self.alpha = 1e-3  # Spread of sigma points
-        self.beta = 2.0    # Incorporates prior knowledge (2 is optimal for Gaussian)
-        self.kappa = 0.0   # Secondary scaling parameter
+        # UKF parameters - tunable
+        if config and 'alpha' in config:
+            self.alpha = config['alpha']
+            self.beta = config['beta']
+            self.kappa = config['kappa']
+        else:
+            self.alpha = 1e-3  # Spread of sigma points
+            self.beta = 2.0    # Incorporates prior knowledge (2 is optimal for Gaussian)
+            self.kappa = 0.0   # Secondary scaling parameter
         
         self.lambda_ = self.alpha**2 * (self.n_state + self.kappa) - self.n_state
         self.n_sigma = 2 * self.n_state + 1
@@ -71,14 +77,23 @@ class UnscentedKalmanFilter:
         self.laser_angles = np.linspace(0, 2*np.pi, self.num_laser_readings)
         self.max_laser_range = 8.183
         
-        # Process noise covariance
-        self.Q = np.diag([0.01, 0.01, 0.005])**2
+        # Process noise covariance - tunable
+        if config and 'Q_x' in config:
+            self.Q = np.diag([config['Q_x'], config['Q_y'], config['Q_theta']])**2
+        else:
+            self.Q = np.diag([0.01, 0.01, 0.005])**2
         
-        # Measurement noise covariance
-        self.R_laser = 0.05**2
+        # Measurement noise covariance - tunable
+        if config and 'R_laser' in config:
+            self.R_laser = config['R_laser']**2
+        else:
+            self.R_laser = 0.05**2
         
-        # Use subset of laser beams
-        self.laser_indices = np.arange(0, self.num_laser_readings, 15)
+        # Use subset of laser beams - tunable
+        if config and 'laser_beam_skip' in config:
+            self.laser_indices = np.arange(0, self.num_laser_readings, config['laser_beam_skip'])
+        else:
+            self.laser_indices = np.arange(0, self.num_laser_readings, 15)
         
     def initialize(self, initial_state, initial_covariance):
         """
