@@ -12,10 +12,9 @@ from __future__ import annotations
 import argparse
 import csv
 import sys
-from typing import List
 
 
-def parse_row_as_floats(row: List[str]) -> List[float]:
+def parse_row_as_floats(row: list[str]) -> list[float]:
     """Try to parse a row's cells into floats. Raise ValueError if any cell is not a float."""
     return [float(v.strip()) for v in row]
 
