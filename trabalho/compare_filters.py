@@ -69,12 +69,13 @@ def verify_files_exist(config):
     return True
 
 
-def run_all_filters(config):
+def run_all_filters(config, tuned_params=None):
     """
     Run all three filters with specified dataset.
     
     Args:
         config: Decimation configuration dict
+        tuned_params: Optional dict with tuned parameters for each filter
         
     Returns:
         Dictionary with filter results
@@ -90,11 +91,24 @@ def run_all_filters(config):
     
     results = {}
     
+    # Prepare filter configs
+    pf_config = None
+    ekf_config = None
+    ukf_config = None
+    
+    if tuned_params:
+        if 'PF' in tuned_params:
+            pf_config = tuned_params['PF'].get('best_params', {})
+        if 'EKF' in tuned_params:
+            ekf_config = tuned_params['EKF'].get('best_params', {})
+        if 'UKF' in tuned_params:
+            ukf_config = tuned_params['UKF'].get('best_params', {})
+    
     # Run Particle Filter
     print(f"  Running Particle Filter...")
     start_time = time.time()
     try:
-        pf = ParticleFilter(num_particles=500)
+        pf = ParticleFilter(num_particles=500, config=pf_config)
         pf_estimates = pf.run_filter(
             odo_diff_file=odo_file,
             laser_file=laser_file,
@@ -111,7 +125,7 @@ def run_all_filters(config):
     print(f"  Running Extended Kalman Filter...")
     start_time = time.time()
     try:
-        ekf = ExtendedKalmanFilter()
+        ekf = ExtendedKalmanFilter(config=ekf_config)
         ekf_estimates, ekf_cov = ekf.run_filter(
             odo_diff_file=odo_file,
             laser_file=laser_file,
@@ -128,7 +142,7 @@ def run_all_filters(config):
     print(f"  Running Unscented Kalman Filter...")
     start_time = time.time()
     try:
-        ukf = UnscentedKalmanFilter()
+        ukf = UnscentedKalmanFilter(config=ukf_config)
         ukf_estimates, ukf_cov = ukf.run_filter(
             odo_diff_file=odo_file,
             laser_file=laser_file,
@@ -337,12 +351,13 @@ def plot_comparison(config, results, reference):
     plt.close(fig)
 
 
-def process_decimation_level(config):
+def process_decimation_level(config, tuned_params=None):
     """
     Process a single decimation level: run filters, compute stats, save results, create plots.
     
     Args:
         config: Decimation configuration dict
+        tuned_params: Optional dict with tuned parameters for each filter
         
     Returns:
         Boolean indicating success
@@ -350,6 +365,8 @@ def process_decimation_level(config):
     print(f"\n{'='*70}")
     print(f"Processing: {config['description']}")
     print(f"Dataset: {config['name']}")
+    if tuned_params:
+        print(f"Using TUNED parameters")
     print(f"{'='*70}")
     
     # Verify files exist
@@ -364,7 +381,7 @@ def process_decimation_level(config):
     
     # Run all filters
     print(f"Running filters...")
-    results = run_all_filters(config)
+    results = run_all_filters(config, tuned_params=tuned_params)
     
     # Save results and statistics
     print(f"Saving results...")
@@ -389,13 +406,20 @@ def process_decimation_level(config):
     return True
 
 
-def main():
-    """Main execution: iterate through decimation levels and process each."""
+def main(tuned_params=None):
+    """Main execution: iterate through decimation levels and process each.
+    
+    Args:
+        tuned_params: Optional dict with tuned parameters for each filter
+    """
     print("\n" + "="*70)
     print("MULTI-LEVEL FILTER COMPARISON ANALYSIS")
     print("="*70)
     print("\nThis script will process each decimation level from smallest to largest,")
     print("running complete filter cycles and saving all results before proceeding.\n")
+    
+    if tuned_params:
+        print("Using TUNED parameters from tune_filters.py\n")
     
     start_time_total = time.time()
     processed_count = 0
@@ -403,7 +427,7 @@ def main():
     # Process each decimation level
     for i, config in enumerate(DECIMATION_LEVELS):
         try:
-            success = process_decimation_level(config)
+            success = process_decimation_level(config, tuned_params=tuned_params)
             if success:
                 processed_count += 1
         except KeyboardInterrupt:

@@ -272,8 +272,22 @@ def save_results(results):
         print()
 
 
-def main():
-    """Main execution."""
+def get_tuned_parameters():
+    """Load and return tuned parameters from tuning_results.json."""
+    try:
+        with open('tuning_results.json', 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print("WARNING: tuning_results.json not found. Using default parameters.")
+        return None
+
+
+def main(save_intermediate=True):
+    """Main execution.
+    
+    Args:
+        save_intermediate: Whether to save results to JSON (set to False when called from tune_and_compare)
+    """
     print("\n" + "="*70)
     print("BAYESIAN GRID SEARCH FILTER TUNING (using scikit-optimize)")
     print("="*70)
@@ -288,10 +302,13 @@ def main():
     total_time = time.time() - start_time_total
     
     # Save results
-    save_results(results)
+    if save_intermediate:
+        save_results(results)
     
     print(f"\nTotal tuning time: {total_time/60:.1f} minutes")
     print("="*70 + "\n")
+    
+    return results
 
 
 if __name__ == '__main__':
