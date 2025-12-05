@@ -22,10 +22,11 @@ from UKF import UnscentedKalmanFilter
 
 
 # Balanced dataset configuration
+# Note: Using corrected laser data (rotated by -154 beams to fix coordinate mismatch)
 DATASET = {
     'odo_file': 'odo_diff_balanced.csv',
     'ref_file': 'ref_balanced.csv',
-    'laser_file': 'laser.csv'
+    'laser_file': 'laser_corrected.csv'  # Use corrected laser data
 }
 
 
