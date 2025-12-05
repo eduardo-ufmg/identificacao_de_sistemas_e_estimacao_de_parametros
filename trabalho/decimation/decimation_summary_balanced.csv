@@ -1,4 +1,4 @@
-dataset,original_size,decimated_size,decimation_factor,compression_ratio,filename
-ref,6291,1573,4,3.9993642720915448,ref_decimated_balanced_f4.csv
-odo,6291,394,16,15.967005076142131,odo_decimated_balanced_f16.csv
-laser,6291,2097,3,3.0,laser_decimated_balanced_f3.csv
+dataset,original_size,decimated_size,decimation_factor
+ref,6291,1573,4
+odo,6291,394,16
+laser,6291,2097,3
