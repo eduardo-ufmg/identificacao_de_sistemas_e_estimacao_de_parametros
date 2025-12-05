@@ -20,34 +20,33 @@ import time
 
 
 # Define decimation levels to process (in order from smallest to largest)
-# Note: Using corrected laser data files (rotated by -154 beams to fix coordinate mismatch)
 DECIMATION_LEVELS = [
     {
         'name': 'aggressive',
         'odo_file': 'odo_diff_aggressive.csv',
         'ref_file': 'ref_aggressive.csv',
-        'laser_file': 'laser_corrected.csv',  # Use corrected laser data
+        'laser_file': None,  # Use standard laser if None
         'description': 'Aggressive decimation (coarse sensor readings)'
     },
     {
         'name': 'balanced',
         'odo_file': 'odo_diff_balanced.csv',
         'ref_file': 'ref_balanced.csv',
-        'laser_file': 'laser_corrected.csv',  # Use corrected laser data
+        'laser_file': None,
         'description': 'Balanced decimation (medium sampling)'
     },
     {
         'name': 'conservative',
         'odo_file': 'odo_diff_conservative.csv',
         'ref_file': 'ref_conservative.csv',
-        'laser_file': 'laser_conservative_corrected.csv',  # Use corrected decimated laser
+        'laser_file': 'laser_conservative.csv',
         'description': 'Conservative decimation (fine sampling)'
     },
     {
         'name': 'full',
         'odo_file': 'odo_diff.csv',
         'ref_file': 'ref.csv',
-        'laser_file': 'laser_corrected.csv',  # Use corrected laser data
+        'laser_file': 'laser.csv',
         'description': 'No decimation (full dataset)'
     }
 ]
@@ -57,7 +56,7 @@ def verify_files_exist(config):
     """Check if required files exist."""
     odo_file = config['odo_file']
     ref_file = config['ref_file']
-    laser_file = config['laser_file'] if config['laser_file'] else 'laser_corrected.csv'
+    laser_file = config['laser_file'] if config['laser_file'] else 'laser.csv'
     
     missing = []
     for f in [odo_file, ref_file, laser_file]:
@@ -83,7 +82,7 @@ def run_all_filters(config, tuned_params=None):
     """
     odo_file = config['odo_file']
     ref_file = config['ref_file']
-    laser_file = config['laser_file'] if config['laser_file'] else 'laser_corrected.csv'
+    laser_file = config['laser_file'] if config['laser_file'] else 'laser.csv'
     
     # Load initial pose
     with open('map_info.json', 'r') as f:
