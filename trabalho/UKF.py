@@ -12,7 +12,7 @@ except ImportError as exc:
         "filterpy is required for UKF; please install it (pip install filterpy)"
     ) from exc
 
-from LaserDynamicModel import LaserDynamicModel
+from LaserDynamicModel import LaserDynamicModel, LaserMixtureModel, load_model
 from OdometryDynamicModel import OdometryDynamicModel
 
 
@@ -54,36 +54,86 @@ class UKFEstimator:
 
     def run(
         self, 
-        controls: np.ndarray, 
+        odo_deltas: np.ndarray,
         laser_data: np.ndarray,
         laser_model_params: tuple,
     ) -> np.ndarray:
-        """Run UKF with one-step-ahead laser measurements; returns states including initial.
+        """Run UKF with one-step-ahead predictions from both odometry and laser models.
         
         Args:
-            controls: odometry deltas (n_steps, 3)
+            odo_deltas: odometry deltas (n_steps, 3) - [dx, dy, dtheta] in global frame
             laser_data: laser scans (n_steps, n_beams)
-            laser_model_params: (A, B, bias) for laser dynamic model
+            laser_model_params: tuple from load_model - either (A, B, bias, False) for single model
+                               or (experts, gating_model, gating_type, True) for mixture
         """
-        A, B, bias = laser_model_params
-        laser_model = LaserDynamicModel(A, B, bias, self.initial_state)
+        is_mixture = laser_model_params[3]
+        
+        if is_mixture:
+            experts, gating_model, gating_type, _ = laser_model_params
+            laser_model = LaserMixtureModel(experts, gating_model, gating_type, self.initial_state)
+        else:
+            A, B, bias, _ = laser_model_params
+            laser_model = LaserDynamicModel(A, B, bias, self.initial_state)
+        
+        # Create odometry model for one-step-ahead predictions
+        odo_model = OdometryDynamicModel(self.initial_state)
         
         states = [self.ukf.x.copy()]
-        for i, (u, scan) in enumerate(zip(controls, laser_data)):
-            # One-step-ahead: use current UKF estimate to correct laser model
-            laser_model.state = states[i].copy()
+        for i, (delta, scan) in enumerate(zip(odo_deltas, laser_data)):
+            # One-step-ahead: reset both models to current fused estimate
+            current_state = states[i].copy()
+            
+            # Get odometry prediction from current fused state
+            odo_model.state = current_state.copy()
+            odo_prediction = odo_model.step(delta)
+            control = odo_prediction - current_state  # Delta from current state
+            
+            # Get laser prediction from current fused state
+            laser_model.state = current_state.copy()
             laser_measurement = laser_model.step(scan)
-            states.append(self.step(u, laser_measurement))
+            
+            # Fuse predictions
+            states.append(self.step(control, laser_measurement))
         return np.array(states)
 
 
 def load_model(model_json_path: str):
+    """Load model parameters from JSON file. Supports both single and mixture models."""
     with open(model_json_path, "r") as f:
         data = json.load(f)
-    A = np.array(data["A"])
-    B = np.array(data["B"])
-    bias = np.array(data["bias"])
-    return A, B, bias
+    
+    # Check if it's a mixture model
+    if 'n_experts' in data and data['n_experts'] > 1:
+        from sklearn.mixture import GaussianMixture
+        from sklearn.cluster import KMeans
+        
+        # Load mixture of experts
+        experts = data['experts']
+        gating_type = data['gating_type']
+        
+        # Reconstruct gating model
+        if gating_type == 'gmm':
+            n_components = data['n_experts']
+            gating_model = GaussianMixture(n_components=n_components, covariance_type='full')
+            # Manually set parameters
+            gating_model.means_ = np.array(data['gating']['means'])
+            gating_model.covariances_ = np.array(data['gating']['covariances'])
+            gating_model.weights_ = np.array(data['gating']['weights'])
+            gating_model.precisions_cholesky_ = np.linalg.cholesky(
+                np.linalg.inv(gating_model.covariances_)
+            )
+        else:  # kmeans
+            n_clusters = data['n_experts']
+            gating_model = KMeans(n_clusters=n_clusters)
+            gating_model.cluster_centers_ = np.array(data['gating']['centers'])
+        
+        return experts, gating_model, gating_type, True
+    else:
+        # Single model
+        A = np.array(data["A"])
+        B = np.array(data["B"])
+        bias = np.array(data["bias"])
+        return A, B, bias, False
 
 
 def load_laser_data(laser_path: str):
@@ -184,17 +234,32 @@ def main():
     initial_pose = np.array(map_info["initial_pose"], dtype=float)
 
     # Data
-    odom_traj = build_odometry_trajectory(args.odo_diff, initial_pose)
+    odo_deltas = np.loadtxt(args.odo_diff, delimiter=",")
+    if odo_deltas.ndim == 1:
+        odo_deltas = odo_deltas.reshape(-1, 3)
     laser_data = load_laser_data(args.laser)
     laser_model_params = load_model(args.model)
+    
+    # Check model type for display
+    is_mixture = laser_model_params[3]
+    if is_mixture:
+        n_experts = len(laser_model_params[0])
+        model_info = f"Mixture ({n_experts} experts)"
+    else:
+        model_info = "Single model"
+    
+    print(f"Using laser model: {model_info}")
 
-    # UKF Estimation with one-step-ahead laser measurements
+    # UKF Estimation with one-step-ahead predictions from both models
     ukf = UKFEstimator(initial_pose, q_std=q_std, r_std=r_std)
     est_states = ukf.run(
-        controls=odom_traj[1:] - odom_traj[:-1],
+        odo_deltas=odo_deltas,
         laser_data=laser_data,
         laser_model_params=laser_model_params,
     )
+    
+    # Build odometry-only trajectory for comparison
+    odom_traj = build_odometry_trajectory(args.odo_diff, initial_pose)
 
     # Plot
     fig, ax = plt.subplots(figsize=(12, 10))
@@ -212,7 +277,7 @@ def main():
         est_states[:, 1],
         color="lime",
         linestyle="-",
-        label="UKF estimate (one-step-ahead)",
+        label="UKF estimate",
     )
 
     ax.plot(est_states[0, 0], est_states[0, 1], "o", label="Start")
@@ -220,7 +285,10 @@ def main():
 
     ax.set_xlabel("X Position (m)")
     ax.set_ylabel("Y Position (m)")
-    ax.set_title("UKF Fusion: Odometry + Laser Dynamic Model (One-Step-Ahead)")
+    title = "UKF Fusion: Odometry + Laser Dynamic Model"
+    if is_mixture:
+        title += f" - {model_info}"
+    ax.set_title(title)
     ax.set_xlim(map_info["xlimits"])
     ax.set_ylim(map_info["ylimits"])
     ax.legend(loc="best")

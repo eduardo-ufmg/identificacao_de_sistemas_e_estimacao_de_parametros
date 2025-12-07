@@ -1,15 +1,26 @@
 {
   "q_std": [
-    0.002778826081950208,
-    0.012553511142524764,
-    9.054291126488927e-06
+    0.001,
+    0.001,
+    2.0
   ],
   "r_std": [
-    0.7042508698311029,
-    0.36505945871885215,
-    0.2972342015710091
+    2.0,
+    2.0,
+    0.001
   ],
-  "objective_value": 23.321254233290077,
-  "method": "Nelder-Mead",
-  "iterations": 223
+  "objective_value": 20.61187453096442,
+  "method": "Bayesian Optimization (GP)",
+  "n_calls": 50,
+  "n_initial_points": 10,
+  "total_evaluations": 50,
+  "q_bounds": [
+    0.001,
+    2.0
+  ],
+  "r_bounds": [
+    0.001,
+    2.0
+  ],
+  "random_state": 0
 }
