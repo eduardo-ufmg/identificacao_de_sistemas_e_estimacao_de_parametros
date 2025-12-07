@@ -52,11 +52,28 @@ class UKFEstimator:
         self.ukf.update(measurement)
         return self.ukf.x.copy()
 
-    def run(self, controls: np.ndarray, measurements: np.ndarray) -> np.ndarray:
-        """Run UKF over full sequences; returns states including initial."""
+    def run(
+        self, 
+        controls: np.ndarray, 
+        laser_data: np.ndarray,
+        laser_model_params: tuple,
+    ) -> np.ndarray:
+        """Run UKF with one-step-ahead laser measurements; returns states including initial.
+        
+        Args:
+            controls: odometry deltas (n_steps, 3)
+            laser_data: laser scans (n_steps, n_beams)
+            laser_model_params: (A, B, bias) for laser dynamic model
+        """
+        A, B, bias = laser_model_params
+        laser_model = LaserDynamicModel(A, B, bias, self.initial_state)
+        
         states = [self.ukf.x.copy()]
-        for u, z in zip(controls, measurements):
-            states.append(self.step(u, z))
+        for i, (u, scan) in enumerate(zip(controls, laser_data)):
+            # One-step-ahead: use current UKF estimate to correct laser model
+            laser_model.state = states[i].copy()
+            laser_measurement = laser_model.step(scan)
+            states.append(self.step(u, laser_measurement))
         return np.array(states)
 
 
@@ -69,15 +86,12 @@ def load_model(model_json_path: str):
     return A, B, bias
 
 
-def build_laser_measurements(
-    laser_path: str, model_path: str, initial_pose: np.ndarray
-):
-    A, B, bias = load_model(model_path)
+def load_laser_data(laser_path: str):
+    """Load laser scan data from CSV file."""
     laser_data = np.loadtxt(laser_path, delimiter=",")
     if laser_data.ndim == 1:
         laser_data = laser_data.reshape(1, -1)
-    model = LaserDynamicModel(A, B, bias, initial_pose)
-    return model.simulate(laser_data)
+    return laser_data
 
 
 def build_odometry_trajectory(odo_diff_path: str, initial_pose: np.ndarray):
@@ -171,13 +185,15 @@ def main():
 
     # Data
     odom_traj = build_odometry_trajectory(args.odo_diff, initial_pose)
-    laser_traj = build_laser_measurements(args.laser, args.model, initial_pose)
+    laser_data = load_laser_data(args.laser)
+    laser_model_params = load_model(args.model)
 
-    # UKF Estimation
+    # UKF Estimation with one-step-ahead laser measurements
     ukf = UKFEstimator(initial_pose, q_std=q_std, r_std=r_std)
     est_states = ukf.run(
         controls=odom_traj[1:] - odom_traj[:-1],
-        measurements=laser_traj[1:],
+        laser_data=laser_data,
+        laser_model_params=laser_model_params,
     )
 
     # Plot
@@ -191,13 +207,12 @@ def main():
     ax.imshow(map_img, extent=extent)
 
     ax.plot(odom_traj[:, 0], odom_traj[:, 1], "b-", label="Odometry only")
-    ax.plot(laser_traj[:, 0], laser_traj[:, 1], "r-", label="Laser model")
     ax.plot(
         est_states[:, 0],
         est_states[:, 1],
         color="lime",
         linestyle="-",
-        label="UKF estimate",
+        label="UKF estimate (one-step-ahead)",
     )
 
     ax.plot(est_states[0, 0], est_states[0, 1], "o", label="Start")
@@ -205,7 +220,7 @@ def main():
 
     ax.set_xlabel("X Position (m)")
     ax.set_ylabel("Y Position (m)")
-    ax.set_title("UKF Fusion: Odometry + Laser Dynamic Model")
+    ax.set_title("UKF Fusion: Odometry + Laser Dynamic Model (One-Step-Ahead)")
     ax.set_xlim(map_info["xlimits"])
     ax.set_ylim(map_info["ylimits"])
     ax.legend(loc="best")
