@@ -42,16 +42,18 @@ def objective(params, initial_pose, odometry, laser_meas, ground_truth=None):
 
     if ground_truth is not None:
         # Compare to ground truth (if available)
-        error = np.mean((est_states - ground_truth) ** 2)
+        error = (est_states - ground_truth)
+        error_mean = np.mean(error ** 2)
+        error_std = np.std(error)
+        error_function = error_mean + error_std
     else:
-        # Penalize deviation from laser measurements and smoothness
-        meas_error = np.mean((est_states[1:] - laser_meas) ** 2)
-        # Encourage smooth trajectories
-        diffs = np.diff(est_states, axis=0)
-        smooth_penalty = 0.1 * np.mean(np.sum(diffs ** 2, axis=1))
-        error = meas_error + smooth_penalty
+        # Penalize difference between initial and final positions as proxy
+        est_initial = est_states[0]
+        est_final = est_states[-1]
+        position_diff = np.linalg.norm(est_final[:2] - est_initial[:2])
+        error_function = position_diff
 
-    return error
+    return error_function
 
 
 def main():
@@ -60,9 +62,9 @@ def main():
     parser.add_argument('--laser', default='laser_dec.csv', help='Path to laser data CSV')
     parser.add_argument('--model', default='laser_model.json', help='Path to laser model JSON')
     parser.add_argument('--map-info', default='map_info.json', help='Path to map info JSON')
-    parser.add_argument('--ground-truth', default='ref_dec.csv', help='Path to ground truth trajectory CSV')
-    parser.add_argument('--init-q-std', type=float, nargs=3, default=[0.02, 0.02, 0.05], help='Initial Q std')
-    parser.add_argument('--init-r-std', type=float, nargs=3, default=[0.05, 0.05, 0.1], help='Initial R std')
+    parser.add_argument('--ground-truth', default=None, help='Path to ground truth trajectory CSV')
+    parser.add_argument('--init-q-std', type=float, nargs=3, default=[1, 1, 1], help='Initial Q std')
+    parser.add_argument('--init-r-std', type=float, nargs=3, default=[1, 1, 1], help='Initial R std')
     parser.add_argument('--method', default='Nelder-Mead', help='Optimization method (Nelder-Mead, Powell, BFGS, etc.)')
     parser.add_argument('--output', default='ukf_tuned.json', help='Path to save tuned parameters')
     args = parser.parse_args()
@@ -80,11 +82,14 @@ def main():
     print(f'Initial R std: {args.init_r_std}')
 
     # Load ground truth trajectory
-    try:
-        ground_truth = np.loadtxt(args.ground_truth, delimiter=',')
-        print(f'Loaded ground truth trajectory with {len(ground_truth)} steps for evaluation.')
-    except Exception as e:
-        print(f'Could not load ground truth trajectory: {e}')
+    if args.ground_truth:
+        try:
+            ground_truth = np.loadtxt(args.ground_truth, delimiter=',')
+            print(f'Loaded ground truth trajectory with {len(ground_truth)} steps for evaluation.')
+        except Exception as e:
+            print(f'Could not load ground truth trajectory: {e}')
+            ground_truth = None
+    else:
         ground_truth = None
 
     # Optimize
@@ -93,7 +98,6 @@ def main():
         x0,
         args=(initial_pose, odometry, laser_meas, ground_truth),
         method=args.method,
-        options={'maxiter': 500, 'xatol': 1e-5, 'fatol': 1e-6}
     )
 
     if not result.success:
