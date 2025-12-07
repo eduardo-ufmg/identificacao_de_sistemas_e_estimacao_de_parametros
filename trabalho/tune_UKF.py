@@ -38,7 +38,7 @@ def objective(params, initial_pose, odometry, laser_meas, ground_truth=None):
         return 1e10
 
     estimator = UKFEstimator(initial_pose, q_std=tuple(q_std), r_std=tuple(r_std))
-    est_states = estimator.run(odometry, laser_meas)
+    est_states = estimator.run(odometry, laser_meas)[:-1]
 
     if ground_truth is not None:
         # Compare to ground truth (if available)
