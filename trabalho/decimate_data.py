@@ -32,7 +32,7 @@ def main():
 	x_ref = ref_dec[:, 0]
 	y_ref = ref_dec[:, 1]
 
-	fig, ax = plt.subplots()
+	fig, ax = plt.subplots(figsize=(12, 10))
 
 	extent = (
 		map_info['xlimits'][0],
@@ -44,13 +44,15 @@ def main():
 
 	ax.plot(x_ref, y_ref, '.-', label=f'Ref decimated (/{factor})')
 	ax.plot(x_ref[0], y_ref[0], 'o', label='Start')
-	ax.plot(x_ref[-1], y_ref[-1], 'o', label='End')
+	ax.plot(x_ref[-1], y_ref[-1], 'x', label='End')
 
 	ax.set_xlabel('X Position (m)')
 	ax.set_ylabel('Y Position (m)')
 	ax.set_title(f'Decimated reference preview (factor {factor})')
 	ax.set_xlim(map_info['xlimits'])
 	ax.set_ylim(map_info['ylimits'])
+	ax.set_aspect('equal')
+	ax.grid(True, alpha=0.3)
 	ax.legend(loc='best')
 
 	# Buttons for user choice
@@ -60,14 +62,28 @@ def main():
 	btn_cancel = Button(btn_ax_cancel, 'Cancel')
 
 	def save_decimated(event):
-		np.savetxt('ref_dec.csv', ref_dec, fmt='%.6f', delimiter=',')
-
 		odo = np.loadtxt('odo.csv', delimiter=',')
-		odo_dec = odo[::factor]
-		np.savetxt('odo_dec.csv', odo_dec, fmt='%.6f', delimiter=',')
-
 		laser = np.loadtxt('laser.csv', delimiter=',')
-		laser_dec = laser[::factor]
+
+		min_len = min(len(ref), len(odo), len(laser))
+		if min_len == 0:
+			print('No samples available to save')
+			plt.close(fig)
+			return
+
+		if min_len < len(ref):
+			print(f'Warning: trimming to {min_len} samples to match shortest series')
+
+		ref_trim = ref[:min_len]
+		odo_trim = odo[:min_len]
+		laser_trim = laser[:min_len]
+
+		ref_dec_save = ref_trim[::factor]
+		odo_dec = odo_trim[::factor]
+		laser_dec = laser_trim[::factor]
+
+		np.savetxt('ref_dec.csv', ref_dec_save, fmt='%.6f', delimiter=',')
+		np.savetxt('odo_dec.csv', odo_dec, fmt='%.6f', delimiter=',')
 		np.savetxt('laser_dec.csv', laser_dec, fmt='%.6f', delimiter=',')
 
 		print(f'Decimated data saved with factor {factor} -> ref_dec.csv, odo_dec.csv, laser_dec.csv')
