@@ -7,10 +7,9 @@ import argparse
 from matplotlib.animation import FuncAnimation
 
 # Parse command line arguments
-parser = argparse.ArgumentParser(description='Plot reference trajectory with optional laser scan visualization')
+parser = argparse.ArgumentParser(description='Plot decimated reference trajectory with optional laser scan visualization')
 parser.add_argument('--laser', action='store_true', help='Show laser scan wavefront animation')
 parser.add_argument('--step', type=int, default=2, help='Step size for laser animation (default: 2)')
-parser.add_argument('--use-decimated', action='store_true', help='Use decimated files ref_dec.csv / laser_dec.csv when available')
 args = parser.parse_args()
 
 # Load map information
@@ -20,17 +19,8 @@ with open('map_info.json', 'r') as f:
 # Load the map image
 map_img = Image.open(map_info['image'])
 
-# Load reference trajectory with fallback
-def load_first_available(candidates, label):
-    for path in candidates:
-        try:
-            return np.loadtxt(path, delimiter=',')
-        except OSError:
-            continue
-    raise FileNotFoundError(f'None of the candidate files for {label} were found: {candidates}')
-
-ref_candidates = ['ref_dec.csv', 'ref.csv'] if args.use_decimated else ['ref.csv', 'ref_dec.csv']
-ref_data = load_first_available(ref_candidates, 'reference trajectory')
+# Load decimated reference trajectory
+ref_data = np.loadtxt('ref_dec.csv', delimiter=',')
 x_ref = ref_data[:, 0]
 y_ref = ref_data[:, 1]
 theta_ref = ref_data[:, 2]
@@ -61,12 +51,10 @@ ax.legend(loc='best')
 # Set axis limits according to map info
 ax.set_xlim(map_info['xlimits'])
 ax.set_ylim(map_info['ylimits'])
-ax.set_aspect('equal')
 
 if args.laser:
-    # Load laser data with fallback
-    laser_candidates = ['laser_dec.csv', 'laser.csv'] if args.use_decimated else ['laser.csv', 'laser_dec.csv']
-    laser_data = load_first_available(laser_candidates, 'laser data')
+    # Load decimated laser data
+    laser_data = np.loadtxt('laser_dec.csv', delimiter=',')
     
     # Laser scanner parameters (typical for a 360-degree scanner)
     num_beams = laser_data.shape[1]
@@ -120,5 +108,4 @@ if args.laser:
     anim = FuncAnimation(fig, update, init_func=init, frames=frames,
                         interval=1000, blit=True, repeat=True)
 
-plt.tight_layout()
 plt.show()
