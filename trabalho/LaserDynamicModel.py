@@ -66,18 +66,24 @@ class LaserDynamicModel:
         self.state = self.A @ self.state + self.B @ features + self.bias
         return self.state.copy()
 
-    def simulate(self, laser_data: np.ndarray) -> np.ndarray:
+    def simulate(self, laser_data: np.ndarray, true_states: np.ndarray | None = None) -> np.ndarray:
         """
         Simulate the full trajectory from laser scans.
 
         Args:
             laser_data: shape (n_steps, n_beams)
+            true_states: shape (n_steps + 1, 3) - if provided, performs one-step-ahead
+                        prediction by resetting to true state at each step.
+                        If None, performs free-run simulation.
 
         Returns:
             Trajectory array of shape (n_steps + 1, 3) including initial pose
         """
         trajectory = [self.state.copy()]
-        for scan in laser_data:
+        for i, scan in enumerate(laser_data):
+            if true_states is not None:
+                # One-step-ahead: reset to true state before prediction
+                self.state = true_states[i].copy()
             trajectory.append(self.step(scan))
         return np.array(trajectory)
 
@@ -105,6 +111,13 @@ def main():
     parser.add_argument(
         "--map-info", default="map_info.json", help="Path to map info JSON"
     )
+    parser.add_argument(
+        "--ref", default=None, help="Path to reference trajectory CSV for one-step-ahead prediction"
+    )
+    parser.add_argument(
+        "--mode", choices=["free-run", "one-step"], default="free-run",
+        help="Simulation mode: free-run or one-step-ahead"
+    )
     args = parser.parse_args()
 
     # Load model parameters
@@ -122,9 +135,17 @@ def main():
     if laser_data.ndim == 1:
         laser_data = laser_data.reshape(1, -1)
 
+    # Load reference trajectory if one-step-ahead mode
+    true_states = None
+    if args.mode == "one-step" or args.ref:
+        ref_path = args.ref if args.ref else "ref_dec.csv"
+        true_states = np.loadtxt(ref_path, delimiter=",")
+        if true_states.ndim == 1:
+            true_states = true_states.reshape(1, -1)
+
     # Simulate trajectory
     model = LaserDynamicModel(A, B, bias, initial_pose)
-    trajectory = model.simulate(laser_data)
+    trajectory = model.simulate(laser_data, true_states)
 
     x_traj = trajectory[:, 0]
     y_traj = trajectory[:, 1]
@@ -140,13 +161,18 @@ def main():
     )
     ax.imshow(map_img, extent=extent)
 
-    ax.plot(x_traj, y_traj, ".-", label="Laser-based Trajectory")
+    mode_label = "One-Step-Ahead" if true_states is not None else "Free-Run"
+    ax.plot(x_traj, y_traj, ".-", label=f"Laser-based Trajectory ({mode_label})")
     ax.plot(x_traj[0], y_traj[0], "o", label="Start")
     ax.plot(x_traj[-1], y_traj[-1], "x", label="End")
 
+    # Plot reference trajectory if available
+    if true_states is not None:
+        ax.plot(true_states[:, 0], true_states[:, 1], "g--", alpha=0.5, label="Reference")
+
     ax.set_xlabel("X Position (m)")
     ax.set_ylabel("Y Position (m)")
-    ax.set_title("Robot Trajectory from Laser Dynamic Model")
+    ax.set_title(f"Robot Trajectory from Laser Dynamic Model ({mode_label})")
     ax.set_xlim(map_info["xlimits"])
     ax.set_ylim(map_info["ylimits"])
     ax.legend(loc="best")
