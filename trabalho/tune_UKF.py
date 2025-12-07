@@ -90,7 +90,7 @@ def main():
     )
     parser.add_argument(
         "--method",
-        default="Nelder-Mead",
+        default=None,
         help="Optimization method (Nelder-Mead, Powell, BFGS, etc.)",
     )
     parser.add_argument(
