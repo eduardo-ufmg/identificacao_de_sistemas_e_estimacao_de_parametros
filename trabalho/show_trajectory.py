@@ -8,7 +8,7 @@ from matplotlib.animation import FuncAnimation
 # Parse command line arguments
 parser = argparse.ArgumentParser(description='Plot reference trajectory with optional laser scan visualization')
 parser.add_argument('--laser', action='store_true', help='Show laser scan wavefront animation')
-parser.add_argument('--step', type=int, default=50, help='Step size for laser animation (default: 50)')
+parser.add_argument('--step', type=int, default=1, help='Step size for laser animation (default: 1)')
 args = parser.parse_args()
 
 # Load map information
@@ -18,8 +18,8 @@ with open('map_info.json', 'r') as f:
 # Load the map image
 map_img = Image.open(map_info['image'])
 
-# Load reference trajectory
-ref_data = np.loadtxt('ref.csv', delimiter=',')
+# Load decimated reference trajectory
+ref_data = np.loadtxt('ref_dec.csv', delimiter=',')
 x_ref = ref_data[:, 0]
 y_ref = ref_data[:, 1]
 theta_ref = ref_data[:, 2]
@@ -52,8 +52,8 @@ ax.set_xlim(map_info['xlimits'])
 ax.set_ylim(map_info['ylimits'])
 
 if args.laser:
-    # Load laser data
-    laser_data = np.loadtxt('laser.csv', delimiter=',')
+    # Load decimated laser data
+    laser_data = np.loadtxt('laser_dec.csv', delimiter=',')
     
     # Laser scanner parameters (typical for a 360-degree scanner)
     num_beams = laser_data.shape[1]
