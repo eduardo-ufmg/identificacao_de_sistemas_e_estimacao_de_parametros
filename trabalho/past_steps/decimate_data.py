@@ -20,9 +20,9 @@ def main():
         sys.exit("Decimation factor must be positive")
 
     # Load map info and image
-    with open("map_info.json", "r") as f:
+    with open("../map_info.json", "r") as f:
         map_info = json.load(f)
-    map_img = Image.open(map_info["image"])
+    map_img = Image.open('../map.png')
 
     # Load and decimate reference trajectory
     ref = np.loadtxt("ref.csv", delimiter=",")
