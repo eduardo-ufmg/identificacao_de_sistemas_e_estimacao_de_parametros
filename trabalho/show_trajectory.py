@@ -2,6 +2,14 @@ import json
 import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
+import argparse
+from matplotlib.animation import FuncAnimation
+
+# Parse command line arguments
+parser = argparse.ArgumentParser(description='Plot reference trajectory with optional laser scan visualization')
+parser.add_argument('--laser', action='store_true', help='Show laser scan wavefront animation')
+parser.add_argument('--step', type=int, default=50, help='Step size for laser animation (default: 50)')
+args = parser.parse_args()
 
 # Load map information
 with open('map_info.json', 'r') as f:
@@ -36,12 +44,67 @@ ax.plot(x_ref[-1], y_ref[-1], 'x', label='End')
 # Set labels and title
 ax.set_xlabel('X Position (m)')
 ax.set_ylabel('Y Position (m)')
-ax.set_title('Reference Trajectory')
+ax.set_title('Reference Trajectory' + (' with Laser Scans' if args.laser else ''))
 ax.legend(loc='best')
 
 # Set axis limits according to map info
 ax.set_xlim(map_info['xlimits'])
 ax.set_ylim(map_info['ylimits'])
+
+if args.laser:
+    # Load laser data
+    laser_data = np.loadtxt('laser.csv', delimiter=',')
+    
+    # Laser scanner parameters (typical for a 360-degree scanner)
+    num_beams = laser_data.shape[1]
+    angle_min = -np.pi  # -180 degrees
+    angle_max = np.pi   # 180 degrees
+    angles = np.linspace(angle_min, angle_max, num_beams)
+    
+    # Initialize laser scan plot
+    laser_points, = ax.plot([], [], 'r.', label='Laser Scan')
+    robot_pos, = ax.plot([], [], 'yo', label='Robot Position')
+    
+    # Update legend
+    ax.legend(loc='best')
+    
+    def init():
+        laser_points.set_data([], [])
+        robot_pos.set_data([], [])
+        return laser_points, robot_pos
+    
+    def update(frame):
+        idx = frame * args.step
+        if idx >= len(x_ref):
+            idx = len(x_ref) - 1
+        
+        # Current robot pose
+        x, y, theta = x_ref[idx], y_ref[idx], theta_ref[idx]
+        
+        # Get laser ranges for this timestep
+        ranges = laser_data[idx, :]
+        
+        # Convert laser ranges to Cartesian coordinates
+        # Laser angles are relative to robot heading
+        laser_x = []
+        laser_y = []
+        for i, (angle, r) in enumerate(zip(angles, ranges)):
+            if r > 0.1 and r < 8.0:  # Filter out invalid readings
+                # Transform to global coordinates
+                global_angle = theta + angle
+                laser_x.append(x + r * np.cos(global_angle))
+                laser_y.append(y + r * np.sin(global_angle))
+        
+        laser_points.set_data(laser_x, laser_y)
+        robot_pos.set_data([x], [y])
+        
+        ax.set_title(f'Reference Trajectory with Laser Scans (Step {idx}/{len(x_ref)-1})')
+        
+        return laser_points, robot_pos
+    
+    num_frames = len(x_ref) // args.step
+    anim = FuncAnimation(fig, update, init_func=init, frames=num_frames, 
+                        interval=1000, blit=True, repeat=True)
 
 plt.tight_layout()
 plt.show()
