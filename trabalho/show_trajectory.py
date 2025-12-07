@@ -27,7 +27,7 @@ with open("map_info.json", "r") as f:
 map_img = Image.open(map_info["image"])
 
 # Load decimated reference trajectory
-ref_data = np.loadtxt("ref_dec.csv", delimiter=",")
+ref_data = np.loadtxt("ref_dec_trimmed.csv", delimiter=",")
 x_ref = ref_data[:, 0]
 y_ref = ref_data[:, 1]
 theta_ref = ref_data[:, 2]
@@ -65,7 +65,7 @@ ax.set_ylim(map_info["ylimits"])
 
 if args.laser:
     # Load decimated laser data
-    laser_data = np.loadtxt("laser_dec.csv", delimiter=",")
+    laser_data = np.loadtxt("laser_dec_trimmed.csv", delimiter=",")
 
     # Laser scanner parameters (typical for a 360-degree scanner)
     num_beams = laser_data.shape[1]

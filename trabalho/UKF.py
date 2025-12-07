@@ -170,11 +170,11 @@ def parse_args():
     )
     parser.add_argument(
         "--odo-diff",
-        default="odo_dec_diff.csv",
+        default="odo_dec_diff_trimmed.csv",
         help="Path to odometry differences CSV (dx, dy, dtheta)",
     )
     parser.add_argument(
-        "--laser", default="laser_dec.csv", help="Path to laser data CSV"
+        "--laser", default="laser_dec_trimmed.csv", help="Path to laser data CSV"
     )
     parser.add_argument(
         "--model", default="laser_model.json", help="Path to laser model JSON"

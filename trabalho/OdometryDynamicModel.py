@@ -58,7 +58,7 @@ def main():
     )
     parser.add_argument(
         "--odo-diff",
-        default="odo_dec_diff.csv",
+        default="odo_dec_diff_trimmed.csv",
         help="Path to odometry differences CSV (dx, dy, dtheta)",
     )
     parser.add_argument(

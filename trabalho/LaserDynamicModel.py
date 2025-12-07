@@ -259,7 +259,7 @@ def main():
         description="Simulate robot position from laser scans using fitted dynamic model"
     )
     parser.add_argument(
-        "--laser", default="laser_dec.csv", help="Path to laser data CSV"
+        "--laser", default="laser_dec_trimmed.csv", help="Path to laser data CSV"
     )
     parser.add_argument(
         "--model", default="laser_model.json", help="Path to model parameters JSON"
