@@ -70,10 +70,10 @@ def main():
         description="Identify a linear dynamic model from reference and laser data"
     )
     parser.add_argument(
-        "--ref", default="ref.csv", help="Path to reference trajectory CSV (x,y,theta)"
+        "--ref", default="ref_dec.csv", help="Path to reference trajectory CSV (x,y,theta)"
     )
     parser.add_argument(
-        "--laser", default="laser.csv", help="Path to laser CSV (time x beams)"
+        "--laser", default="laser_dec.csv", help="Path to laser CSV (time x beams)"
     )
     parser.add_argument(
         "--step", type=int, default=1, help="Time step delta for the model (default: 1)"
