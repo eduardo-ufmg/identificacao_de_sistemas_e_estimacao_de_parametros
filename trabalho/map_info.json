@@ -1,19 +1,19 @@
 {
-    "image":"map.png",
-    "resolution":0.0962,
-    "xlimits":[
+    "image": "map.png",
+    "resolution": 0.0962,
+    "xlimits": [
         -5.83518,
         48.2386
     ],
-    "ylimits":[
+    "ylimits": [
         -30.7275,
         41.7827
     ],
-    "ncol":563,
-    "nrow":754,
-    "initial_pose":[
-        4.33,
-        0.79,
-        1.56
+    "ncol": 563,
+    "nrow": 754,
+    "initial_pose": [
+        37.9258,
+        -14.2546,
+        1.51626
     ]
 }
