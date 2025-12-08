@@ -2,14 +2,14 @@
   "q_std": [
     0.01,
     0.01,
-    1.0
+    0.01
   ],
   "r_std": [
-    0.6102427635428003,
+    0.6102318363208832,
     1.0,
     1.0
   ],
-  "objective_value": 2.21811275414099,
+  "objective_value": 3.6675578348852147,
   "method": "Bayesian Optimization (GP)",
   "n_calls": 50,
   "n_initial_points": 10,

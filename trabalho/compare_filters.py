@@ -295,9 +295,20 @@ def plot_comparison(data: dict, trajectories: dict, exec_times: dict, output_pat
     linestyles = {'UKF': '-', 'EKF': '-', 'PF': '-'}
     linewidths = {'UKF': 2, 'EKF': 2, 'PF': 2}
     
+    # Arrow parameters for orientation visualization
+    arrow_spacing = max(1, len(data['odo_deltas']) // 20)  # Show ~20 arrows per trajectory
+    arrow_scale = 0.3  # Arrow length scale
+    
     if ref_traj is not None:
         ax_main.plot(ref_traj[:, 0], ref_traj[:, 1], 'k-', linewidth=2.5, 
                     label='Reference (Ground Truth)', alpha=0.8)
+        # Add orientation arrows for reference
+        for i in range(0, len(ref_traj), arrow_spacing):
+            dx = arrow_scale * np.cos(ref_traj[i, 2])
+            dy = arrow_scale * np.sin(ref_traj[i, 2])
+            ax_main.arrow(ref_traj[i, 0], ref_traj[i, 1], dx, dy,
+                         head_width=0.15, head_length=0.1, fc='black', ec='black',
+                         alpha=0.6, width=0.02, zorder=5)
     
     # Label odometry trajectory based on model type
     odo_label = 'Odometry Only'
@@ -307,6 +318,13 @@ def plot_comparison(data: dict, trajectories: dict, exec_times: dict, output_pat
     
     ax_main.plot(odom_traj[:, 0], odom_traj[:, 1], 'b--', linewidth=1.5,
                 label=odo_label, alpha=0.6)
+    # Add orientation arrows for odometry
+    for i in range(0, len(odom_traj), arrow_spacing):
+        dx = arrow_scale * np.cos(odom_traj[i, 2])
+        dy = arrow_scale * np.sin(odom_traj[i, 2])
+        ax_main.arrow(odom_traj[i, 0], odom_traj[i, 1], dx, dy,
+                     head_width=0.5, head_length=0.75, fc='blue', ec='blue',
+                     alpha=0.4, width=0.2, zorder=4)
     
     for name, traj in trajectories.items():
         ax_main.plot(traj[:, 0], traj[:, 1], 
@@ -315,6 +333,14 @@ def plot_comparison(data: dict, trajectories: dict, exec_times: dict, output_pat
                     linewidth=linewidths[name],
                     label=f'{name} Estimate',
                     alpha=0.8)
+        # Add orientation arrows for each filter
+        for i in range(0, len(traj), arrow_spacing):
+            dx = arrow_scale * np.cos(traj[i, 2])
+            dy = arrow_scale * np.sin(traj[i, 2])
+            ax_main.arrow(traj[i, 0], traj[i, 1], dx, dy,
+                         head_width=0.5, head_length=0.75, 
+                         fc=colors[name], ec=colors[name],
+                         alpha=0.7, width=0.2, zorder=6)
     
     # Mark start and end
     ax_main.plot(data['initial_pose'][0], data['initial_pose'][1], 
