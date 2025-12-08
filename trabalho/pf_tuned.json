@@ -1,0 +1,36 @@
+{
+  "n_particles": 511,
+  "q_std": [
+    0.14386599167139758,
+    0.330899597715282,
+    0.15817811851184638
+  ],
+  "r_std": [
+    0.23009817436907185,
+    0.39262409131460346,
+    0.9035724907741108
+  ],
+  "resample_threshold": 0.5249749949556138,
+  "objective_value": 4.928224856986855,
+  "method": "Bayesian Optimization (GP)",
+  "n_calls": 50,
+  "n_initial_points": 10,
+  "total_evaluations": 50,
+  "n_particles_bounds": [
+    100,
+    2000
+  ],
+  "q_bounds": [
+    0.01,
+    1.0
+  ],
+  "r_bounds": [
+    0.01,
+    1.0
+  ],
+  "resample_bounds": [
+    0.3,
+    0.8
+  ],
+  "random_state": 0
+}
