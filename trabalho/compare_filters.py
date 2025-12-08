@@ -9,7 +9,6 @@ computes statistical metrics, and generates comparison plots.
 import argparse
 import json
 import time
-from typing import Dict, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -78,7 +77,7 @@ def load_data(args):
     }
 
 
-def run_filter(filter_class, filter_name: str, data: dict, params: dict, verbose: bool = True) -> Tuple[np.ndarray, float, dict]:
+def run_filter(filter_class, filter_name: str, data: dict, params: dict, verbose: bool = True) -> tuple[np.ndarray, float, dict]:
     """
     Run a filter and return trajectory, execution time, and additional stats.
     
@@ -138,7 +137,7 @@ def run_filter(filter_class, filter_name: str, data: dict, params: dict, verbose
     return trajectory, exec_time, filter_stats
 
 
-def compute_metrics(estimated: np.ndarray, reference: np.ndarray, name: str) -> Dict:
+def compute_metrics(estimated: np.ndarray, reference: np.ndarray, name: str) -> dict:
     """
     Compute error metrics between estimated and reference trajectories.
     

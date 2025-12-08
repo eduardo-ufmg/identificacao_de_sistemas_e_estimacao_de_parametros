@@ -67,10 +67,10 @@ if args.laser:
     # Load decimated laser data
     laser_data = np.loadtxt("laser_dec_trimmed.csv", delimiter=",")
 
-    # Laser scanner parameters (typical for a 360-degree scanner)
+    # Laser scanner parameters (typical for a 180-degree scanner)
     num_beams = laser_data.shape[1]
-    angle_min = -np.pi  # -180 degrees
-    angle_max = np.pi  # 180 degrees
+    angle_min = -np.pi / 2  # -90 degrees
+    angle_max = np.pi / 2  # 90 degrees
     angles = np.linspace(angle_min, angle_max, num_beams)
 
     # Initialize laser scan plot
