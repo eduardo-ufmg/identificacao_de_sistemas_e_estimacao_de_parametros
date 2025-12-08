@@ -84,10 +84,10 @@ def main():
         "--ground-truth", default=None, help="Path to ground truth trajectory CSV"
     )
     parser.add_argument(
-        "--n-calls", type=int, default=500, help="Number of Bayesian optimization iterations"
+        "--n-calls", type=int, default=50, help="Number of Bayesian optimization iterations"
     )
     parser.add_argument(
-        "--n-initial", type=int, default=50, help="Number of random initial evaluations"
+        "--n-initial", type=int, default=10, help="Number of random initial evaluations"
     )
     parser.add_argument(
         "--q-bounds", type=float, nargs=2, default=[0.01, 1.0], 

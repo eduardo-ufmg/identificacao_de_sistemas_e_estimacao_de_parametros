@@ -1,26 +1,26 @@
 {
   "q_std": [
-    0.001,
-    0.001,
-    2.0
+    0.62869171536779,
+    1.0,
+    1.0
   ],
   "r_std": [
-    2.0,
-    2.0,
-    0.001
+    0.8552022618291578,
+    0.8594763562756683,
+    0.20938242578603733
   ],
-  "objective_value": 20.61187453096442,
+  "objective_value": 3.665959671489407,
   "method": "Bayesian Optimization (GP)",
-  "n_calls": 50,
+  "n_calls": 100,
   "n_initial_points": 10,
-  "total_evaluations": 50,
+  "total_evaluations": 100,
   "q_bounds": [
-    0.001,
-    2.0
+    0.01,
+    1.0
   ],
   "r_bounds": [
-    0.001,
-    2.0
+    0.01,
+    1.0
   ],
   "random_state": 0
 }
