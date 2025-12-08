@@ -29,7 +29,7 @@
 
 In the provided problem, the odometry data exhibits a noticeable drift, as discussed in Section \ref{sec:odometry}. This drift leads to a significant discrepancy between the odometry estimates and the reference data, which can adversely affect the overall pose estimation accuracy. While laser data has the potential to mitigate this drift by providing more accurate position information, it is important to note that laser readings are often subject to noise and other environmental factors. Consequently, relying solely on laser data for robot localization presents its own challenges. The integration of both odometry and laser data is essential for achieving a robust and reliable pose estimation, as it allows for the correction of odometry drift while leveraging the strengths of each data source.
 
-Since the trajectory spans across several meters and the laser model exhibits dependency on the map structure, linear filtering approaches prove insufficient for achieving adequate pose estimates. The spatial variation of the environment introduces nonlinearities in the measurement model that cannot be adequately captured by linear filters such as the standard Kalman Filter. Consequently, nonlinear filtering techniques are necessary to properly account for these dynamics and provide reliable pose estimation. These advanced filtering methods are discussed in detail in Section \ref{sec:filters}.
+Since the trajectory spans across several meters and the laser model exhibits dependency on the map structure, linear filtering approaches prove insufficient for achieving adequate pose estimates. The spatial variation of the environment introduces nonlinearities in the measurement model that cannot be adequately captured by linear filters such as the standard Kalman Filter. Consequently, nonlinear filtering techniques are necessary to properly account for these dynamics and provide reliable pose estimation \cite{Aguirre2007}. These advanced filtering methods are discussed in detail in Section \ref{sec:filters}.
 
 \section{Map} \label{sec:map}
 
@@ -181,7 +181,7 @@ The cumulative displacement can be expressed as:
 
 where \( (x_0, y_0, \theta_0) \) represents the initial pose of the robot. This formulation allows for the calculation of the robot's position and orientation at any given time step \( i \) relative to its starting point.
 
-It is important to note that the odometry data serves as the input to the odometry models discussed in Section \ref{sec:odometry_model}. Rather than providing a reference for evaluation, the odometry model functions as the \textit{process model} in the estimation techniques employed in this work. Specifically, the odometry model generates predictions of the robot's pose evolution that are subsequently corrected by the integration of laser measurements through the filtering algorithms. The predictions from the odometry model are refined by the filtering techniques to account for the accumulated drift and produce more accurate pose estimates. This correction mechanism is central to the effectiveness of the Unscented Kalman Filter, Extended Kalman Filter, and Particle Filter approaches discussed in Section \ref{sec:filters}.
+It is important to note that the odometry data serves as the input to the odometry models discussed in Section \ref{sec:odometry_model}. Rather than providing a reference for evaluation, the odometry model functions as the \textit{process model} \cite{Aguirre2007} in the estimation techniques employed in this work. Specifically, the odometry model generates predictions of the robot's pose evolution that are subsequently corrected by the integration of laser measurements through the filtering algorithms. The predictions from the odometry model are refined by the filtering techniques to account for the accumulated drift and produce more accurate pose estimates. This correction mechanism is central to the effectiveness of the Unscented Kalman Filter, Extended Kalman Filter, and Particle Filter approaches discussed in Section \ref{sec:filters}.
 
 \section{Data Preprocessing} \label{sec:data_preprocessing}
 
@@ -197,7 +197,7 @@ The preprocessing strategy employed in this work comprises two main steps: data 
 
 \subsection{Decimation} \label{sec:decimation}
 
-Data decimation is performed to reduce the computational burden of subsequent filtering operations while preserving the essential dynamics of the robot's trajectory. The decimation process selects a subset of the original observations at regular intervals, effectively reducing the sampling frequency. If the original dataset contains $N$ observations sampled at frequency $f_s$, decimation with factor $d$ yields a reduced dataset with $N' = \lfloor N / d \rfloor$ observations sampled at frequency $f_s' = f_s / d$.
+Data decimation is performed to reduce the computational burden of subsequent filtering operations while preserving the essential dynamics of the robot's trajectory \cite{Aguirre2007}. The decimation process selects a subset of the original observations at regular intervals, effectively reducing the sampling frequency. If the original dataset contains $N$ observations sampled at frequency $f_s$, decimation with factor $d$ yields a reduced dataset with $N' = \lfloor N / d \rfloor$ observations sampled at frequency $f_s' = f_s / d$.
 
 The decimation factor was determined through a systematic trial-and-error manual process. Various decimation ratios were tested by applying each factor to the complete dataset and subsequently visualizing the resulting reference trajectory overlaid on the environment map. This visual inspection approach allowed for qualitative assessment of how well the decimated trajectory preserved the essential characteristics of the original path. The selection criterion was to identify the highest decimation factor that yielded a trajectory sufficiently similar to the original, thereby minimizing data while maintaining fidelity to the experimental dynamics.
 
@@ -211,9 +211,168 @@ Trajectory trimming is performed to eliminate segments of the robot's path that 
 
 \section{Laser Model} \label{sec:laser_model}
 
+\subsection{Linear Dynamic Model} \label{sec:laser_model_linear}
 
+The laser-based position estimation task is formulated as a discrete-time linear dynamic system where the robot's state evolves according to laser measurements. The state vector comprises three components: horizontal position, vertical position, and orientation angle. At each time step, the state transition is governed by a linear relationship between the current state, extracted laser features, and a bias term.
+
+Formally, the model is defined as:
+
+\begin{equation}
+    \mathbf{x}_{k+1} = \mathbf{A} \mathbf{x}_k + \mathbf{B} \mathbf{f}(\mathbf{s}_k) + \mathbf{b}
+\end{equation}
+
+where:
+\begin{itemize}
+    \item $\mathbf{x}_k = [x_k, y_k, \theta_k]^T$ is the state vector at time step $k$
+    \item $\mathbf{A} \in \mathbb{R}^{3 \times 3}$ is the state transition matrix
+    \item $\mathbf{f}(\mathbf{s}_k) \in \mathbb{R}^6$ is a feature vector extracted from the laser scan
+    \item $\mathbf{B} \in \mathbb{R}^{3 \times 6}$ is the laser feature weight matrix
+    \item $\mathbf{b} \in \mathbb{R}^3$ is a bias vector
+\end{itemize}
+
+\subsubsection{Laser Feature Extraction}
+
+Rather than using all 360 laser measurements directly, six summary statistics are computed to reduce dimensionality while capturing essential geometric information about the robot's surroundings. These features are:
+
+\begin{equation}
+    \mathbf{f}(\mathbf{s}) = [\mu, r_{\min}, \sigma, \mu_{\text{left}}, \mu_{\text{front}}, \mu_{\text{right}}]^T
+\end{equation}
+
+where:
+\begin{itemize}
+    \item $\mu = \frac{1}{360}\sum_{j=1}^{360} r_j$ is the mean of all laser ranges
+    \item $r_{\min} = \min(r_1, r_2, \ldots, r_{360})$ is the minimum range (closest obstacle)
+    \item $\sigma = \sqrt{\frac{1}{360}\sum_{j=1}^{360}(r_j - \mu)^2}$ is the standard deviation
+    \item $\mu_{\text{left}}, \mu_{\text{front}}, \mu_{\text{right}}$ are mean ranges computed over the left (sensors 1--120), front (sensors 121--240), and right (sensors 241--360) sectors respectively
+\end{itemize}
+
+These features capture both global context (mean, minimum, standard deviation) and local directional information about the environment relative to the robot's heading.
+
+\subsubsection{Model Identification}
+
+The model parameters $\{\mathbf{A}, \mathbf{B}, \mathbf{b}\}$ are identified from experimental data using linear regression \cite{Aguirre2007}. Given reference trajectory data $\{\mathbf{x}_0, \mathbf{x}_1, \ldots, \mathbf{x}_N\}$ and corresponding laser scans $\{\mathbf{s}_0, \mathbf{s}_1, \ldots, \mathbf{s}_N\}$, the regression problem is formulated as:
+
+\begin{equation}
+    \min_{\mathbf{A}, \mathbf{B}, \mathbf{b}} \sum_{k=0}^{N-\Delta} \left\| \mathbf{x}_{k+\Delta} - (\mathbf{A} \mathbf{x}_k + \mathbf{B} \mathbf{f}(\mathbf{s}_k) + \mathbf{b}) \right\|_2^2
+\end{equation}
+
+where $\Delta$ is a time step parameter (typically $\Delta = 1$). This optimization problem is solved using ordinary least squares regression, yielding closed-form solutions for the model parameters.
+
+\subsection{Nonlinear AutoRegressive eXogenous (NARX) Model} \label{sec:laser_model_narx}
+
+To capture nonlinear relationships between laser observations and state evolution, a NARX model is employed \cite{scikit-learn}. This approach incorporates past state information through an autoregressive structure, allowing the model to learn temporal dependencies in the robot's dynamics.
+
+The NARX model is defined as:
+
+\begin{equation}
+    \mathbf{x}_{k+1} = g(\mathbf{x}_k, \mathbf{x}_{k-1}, \ldots, \mathbf{x}_{k-n_{\text{lag}}+1}, \mathbf{f}(\mathbf{s}_k))
+\end{equation}
+
+where $g(\cdot)$ is a nonlinear function parameterized by a machine learning model, and $n_{\text{lag}}$ is the number of past time steps (lags) used as autoregressive inputs.
+
+The input feature vector concatenates past state history and current laser features:
+
+\begin{equation}
+    \mathbf{u}_k = [\mathbf{x}_k, \mathbf{x}_{k-1}, \ldots, \mathbf{x}_{k-n_{\text{lag}}+1}, \mathbf{f}(\mathbf{s}_k)]^T
+\end{equation}
+
+Three model variants are investigated:
+
+\begin{enumerate}
+    \item \textbf{Linear NARX:} A ridge regression model with $\ell_2$ regularization applied directly to the augmented feature vector.
+    
+    \item \textbf{Polynomial NARX:} Ridge regression applied to polynomial expansions of the input features, capturing nonlinear interactions up to a specified degree.
+    
+    \item \textbf{Neural NARX:} A multilayer perceptron with rectified linear activation functions, trained via stochastic gradient descent with early stopping to prevent overfitting.
+\end{enumerate}
+
+\subsubsection{Hyperparameter Optimization}
+
+Given the number of potential hyperparameters, a systematic grid search with time series cross-validation is performed to identify optimal configurations. The search space includes:
+
+\begin{itemize}
+    \item Number of lags: $n_{\text{lag}} \in \{2, 3, 5\}$
+    \item Model type: $\{\text{linear}, \text{polynomial}, \text{neural}\}$
+    \item Polynomial degree (if applicable): $\{2, 3\}$
+    \item Neural network hidden layer configurations (if applicable)
+    \item Regularization strength: $\alpha \in \{0.001, 0.01, 0.1\}$
+\end{itemize}
+
+Time series cross-validation is employed rather than random cross-validation to respect the temporal structure of the data \cite{scikit-learn}. The dataset is divided into sequential folds, where earlier data is used for training and subsequent data for validation, preventing information leakage from future to past observations.
+
+\subsubsection{Selected Model}
+
+Based on grid search results, the optimal configuration exhibits the following characteristics: a linear NARX model with two lags, ridge regularization strength of 0.01, utilizing input features from both past and present time steps. This configuration achieves root mean square error values of approximately $[0.128, 0.077, 0.808]$ meters per state component (horizontal position, vertical position, and orientation) on the validation dataset.
+
+The selection of a linear model over nonlinear variants suggests that the relationship between laser features and state evolution is primarily linear within the operational regime studied. The modest input dimensionality ($2 \times 3 + 6 = 12$ features) and the strong performance without polynomial expansion or neural network complexity indicate that the essential predictive information is captured by the linear relationships encoded in the model coefficients.
+
+\begin{figure}[htbp]
+    \centerline{\includegraphics[width=\linewidth]{laser_model_freerun.png}}
+    \caption{Free-run simulation of the laser model.}
+    \label{fig:laser_model_freerun}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centerline{\includegraphics[width=\linewidth]{laser_model_onestep.png}}
+    \caption{One-step ahead simulation of the laser model.}
+    \label{fig:laser_model_onestep}
+\end{figure}
+
+The validation of the laser model reveals important insights into its predictive capabilities and limitations. Figure \ref{fig:laser_model_freerun} presents a free-run simulation where the model operates autonomously, using only its own predictions as input for subsequent time steps. Starting from the initial reference pose $\mathbf{x}_0$, the model generates predictions iteratively according to:
+
+\begin{equation}
+    \hat{\mathbf{x}}_{k+1} = \mathbf{A} \hat{\mathbf{x}}_k + \mathbf{B} \mathbf{f}(\mathbf{s}_k) + \mathbf{b}
+\end{equation}
+
+where $\hat{\mathbf{x}}_k$ denotes the model's own prediction at time step $k$. While this autonomous simulation succeeds in capturing the general trajectory morphology, it exhibits severe degradation in precision. The accumulated prediction errors compound over time, resulting in substantial deviations from the reference trajectory and rendering the free-run simulation unsuitable for direct pose estimation applications. The root mean square error grows progressively with prediction horizon, illustrating the accumulation of modeling uncertainty.
+
+In contrast, Figure \ref{fig:laser_model_onestep} demonstrates the performance of one-step ahead prediction, where the model receives the true state at each time step and predicts only the immediate next state:
+
+\begin{equation}
+    \hat{\mathbf{x}}_{k+1} = \mathbf{A} \mathbf{x}_k + \mathbf{B} \mathbf{f}(\mathbf{s}_k) + \mathbf{b}
+\end{equation}
+
+This one-step prediction exhibits markedly superior performance, with estimates closely tracking the reference trajectory throughout the experiment. The laser model achieves high fidelity when operating with access to ground truth state information, suggesting that the model has learned accurate local dynamics and that prediction errors primarily arise from accumulated drift rather than fundamental model inadequacy. This characteristic makes the laser model particularly well-suited as a measurement update component within filtering frameworks, where the filtering algorithms can provide corrected state estimates at each time step, thereby preventing error accumulation. The high one-step prediction accuracy validates the model's suitability for integration into the Unscented Kalman Filter, Extended Kalman Filter, and Particle Filter approaches discussed in Section \ref{sec:filters}.
 
 \section{Odometry Model} \label{sec:odometry_model}
+
+\subsection{Original Odometry Model} \label{sec:odometry_model_original}
+
+The odometry data, as detailed in Section \ref{sec:odometry}, is provided in the global reference frame with measurements expressed as cumulative displacements from the robot's initial pose. Given this characteristic, the original and most straightforward odometry model employs a static assumption wherein the robot's pose at any time step $k$ is computed by simply adding the odometry displacement to the initial pose.
+
+Formally, let $\mathbf{x}_0 = [x_0, y_0, \theta_0]^T$ denote the initial pose of the robot and $\mathbf{o}_k = [\Delta x_k, \Delta y_k, \Delta \theta_k]^T$ represent the cumulative odometry displacement at time step $k$. The original odometry model is then defined as:
+
+\begin{equation}
+    \mathbf{x}_k = \mathbf{x}_0 + \mathbf{o}_k
+\end{equation}
+
+This linear, time-invariant model assumes that the odometry measurements accurately reflect the robot's true displacements without drift or systematic errors. In practice, however, odometry data accumulated over extended trajectories typically exhibits significant drift, as the errors in wheel encoders and other motion sensors compound over time. As discussed in Section \ref{sec:introduction}, this drift manifests as an increasing discrepancy between the odometry-based estimates and the ground truth reference data, particularly over the several meters spanned by the experimental trajectory.
+
+Despite its simplicity, this static model serves as a baseline for understanding the limitations of odometry-based localization and motivates the necessity of integrating laser measurements through advanced filtering techniques. The comparison between this original model's predictions and the reference data quantifies the magnitude of odometry drift and establishes the performance gap that the filtering algorithms aim to bridge through sensor fusion.
+
+\begin{figure}[htbp]
+    \centerline{\includegraphics[width=\linewidth]{original_odo_model.png}}
+    \caption{Original odometry model free-run simulation.}
+    \label{fig:original_odo_model}
+\end{figure}
+
+Figure \ref{fig:original_odo_model} demonstrates that the original static odometry model captures local movements of the robot with notable precision over short time intervals. However, the model exhibits pronounced drift when operated in free-run mode over the complete experimental trajectory. This drift accumulates progressively, resulting in substantial deviations from the reference trajectory as the mission duration extends. The root cause of this degradation lies in the inherent limitations of odometry-based localization: incremental errors from wheel encoders and inertial sensors compound over time, leading to systematic bias in the estimated pose.
+
+Given that the odometry model serves as the \textit{process model} in the filtering framework, as discussed in Section \ref{sec:odometry_model}, the fidelity of odometry predictions directly influences the quality of the filtering estimates. A more accurate process model would reduce the prediction uncertainty and allow the filtering algorithms to operate more effectively within their respective correction mechanisms. This observation motivates the development of an improved odometry model that better captures the dynamics of robot motion and mitigates accumulated drift.
+
+Despite the limitations of the original odometry model, an important insight emerges from the joint consideration of the odometry and laser models: even a modestly accurate laser model can effectively correct smaller pose mismatches introduced by odometry drift. The laser model, when integrated into a filtering framework, provides measurement updates that anchor the robot's estimated pose to environmental features encoded in the map. Since the laser measurements contain rich geometric information about the robot's surroundings, they can resolve ambiguities in the pose estimate that arise from odometry errors. Consequently, the combination of a corrected process model and laser-based measurement updates through advanced filtering techniques represents a promising approach for robust pose estimation, even when individual models exhibit limitations.
+
+\subsection{Odometry Data Differentiation} \label{sec:odometry_model_differentiation}
+
+To enhance the odometry model's fidelity and better capture the robot's motion dynamics, the cumulative odometry data is transformed into incremental displacements between consecutive time steps. This differentiation process allows the model to represent the robot's movement as a series of small, discrete steps rather than a single cumulative displacement from the initial pose. Formally, let $\mathbf{o}_k = [\Delta x_k, \Delta y_k, \Delta \theta_k]^T$ denote the cumulative odometry displacement at time step $k$. The incremental odometry displacement $\Delta \mathbf{o}_k$ between time steps $k-1$ and $k$ is computed as:
+
+\begin{equation}
+    \Delta \mathbf{o}_k = \mathbf{o}_k - \mathbf{o}_{k-1} = [\Delta x_k - \Delta x_{k-1}, \Delta y_k - \Delta y_{k-1}, \Delta \theta_k - \Delta \theta_{k-1}]^T
+\end{equation}
+
+This transformation yields a sequence of incremental displacements $\{\Delta \mathbf{o}_1, \Delta \mathbf{o}_2, \ldots, \Delta \mathbf{o}_N\}$ that more accurately reflects the robot's motion dynamics over time. By modeling the robot's pose evolution as a series of small steps, the odometry model can better account for variations in speed, direction changes, and other dynamic factors that influence the robot's trajectory.
+
+
 
 \section{Filters} \label{sec:filters}
 
@@ -228,18 +387,6 @@ Trajectory trimming is performed to eliminate segments of the robot's path that 
 \section{Results} \label{sec:results}
 
 \section{Conclusion} \label{sec:conclusion}
-
-\appendix
-
-\section{Linear Models on a Reduced Range} \label{sec:apdx_linear_models_on_a_reduced_range}
-
-\subsection{Range} \label{sec:apdx_range}
-
-\subsection{Laser Model} \label{sec:apdx_laser_model}
-
-\subsection{Odometry Model} \label{sec:apdx_odometry_model}
-
-\subsection{Results} \label{sec:apdx_results}
 
 \begin{thebibliography}{00}
 
