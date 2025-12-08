@@ -16,9 +16,11 @@ import numpy as np
 from PIL import Image
 from scipy import stats
 
-from UKF import UKFEstimator, load_model, load_laser_data, build_odometry_trajectory
+from UKF import UKFEstimator, load_laser_data, build_odometry_trajectory
 from EKF import EKFEstimator
 from PF import ParticleFilter
+from LaserDynamicModel import load_model as load_laser_model
+from OdometryDynamicModel import load_model as load_odo_model
 
 
 def load_data(args):
@@ -38,7 +40,12 @@ def load_data(args):
     laser_data = load_laser_data(args.laser)
     
     # Laser model
-    laser_model_params = load_model(args.model)
+    laser_model_params = load_laser_model(args.model)
+    
+    # Odometry model (optional)
+    odo_model_params = None
+    if args.odo_model:
+        odo_model_params = load_odo_model(args.odo_model)
     
     # Reference trajectory (ground truth)
     ref_traj = None
@@ -57,6 +64,7 @@ def load_data(args):
         'odo_deltas': odo_deltas,
         'laser_data': laser_data,
         'laser_model_params': laser_model_params,
+        'odo_model_params': odo_model_params,
         'ref_traj': ref_traj,
         'odom_traj': odom_traj,
     }
@@ -78,6 +86,7 @@ def run_filter(filter_class, filter_name: str, data: dict, params: dict, verbose
     odo_deltas = data['odo_deltas']
     laser_data = data['laser_data']
     laser_model_params = data['laser_model_params']
+    odo_model_params = data.get('odo_model_params')
     
     # Create filter instance
     if filter_name == "UKF":
@@ -105,7 +114,7 @@ def run_filter(filter_class, filter_name: str, data: dict, params: dict, verbose
     
     # Run filter with timing
     start_time = time.time()
-    trajectory = filter_obj.run(odo_deltas, laser_data, laser_model_params)
+    trajectory = filter_obj.run(odo_deltas, laser_data, laser_model_params, odo_model_params)
     exec_time = time.time() - start_time
     
     # Collect filter-specific stats
@@ -412,6 +421,11 @@ def parse_args():
         "--model", 
         default="laser_model.json", 
         help="Path to laser model JSON"
+    )
+    parser.add_argument(
+        "--odo-model",
+        default=None,
+        help="Path to odometry NARX model JSON (optional)"
     )
     parser.add_argument(
         "--map-info", 

@@ -10,11 +10,12 @@ from EKF import (
     EKFEstimator,
     load_laser_data,
     build_odometry_trajectory,
-    load_model,
 )
+from LaserDynamicModel import load_model as load_laser_model
+from OdometryDynamicModel import load_model as load_odo_model
 
 
-def load_data(odo_diff_path: str, laser_path: str, model_path: str, map_info_path: str):
+def load_data(odo_diff_path: str, laser_path: str, model_path: str, map_info_path: str, odo_model_path: str | None = None):
     """Load and prepare all data."""
     with open(map_info_path, "r") as f:
         map_info = json.load(f)
@@ -24,16 +25,20 @@ def load_data(odo_diff_path: str, laser_path: str, model_path: str, map_info_pat
     if odo_deltas.ndim == 1:
         odo_deltas = odo_deltas.reshape(-1, 3)
     laser_data = load_laser_data(laser_path)
-    laser_model_params = load_model(model_path)
+    laser_model_params = load_laser_model(model_path)
+    
+    odo_model_params = None
+    if odo_model_path:
+        odo_model_params = load_odo_model(odo_model_path)
 
     n_steps = min(len(odo_deltas), len(laser_data))
     odometry = odo_deltas[:n_steps]
     laser_scans = laser_data[:n_steps]
 
-    return initial_pose, odometry, laser_scans, laser_model_params
+    return initial_pose, odometry, laser_scans, laser_model_params, odo_model_params
 
 
-def create_objective_function(initial_pose, odo_deltas, laser_scans, laser_model_params, ground_truth):
+def create_objective_function(initial_pose, odo_deltas, laser_scans, laser_model_params, odo_model_params, ground_truth):
     """
     Create objective function closure for Bayesian Optimization.
     
@@ -49,7 +54,7 @@ def create_objective_function(initial_pose, odo_deltas, laser_scans, laser_model
         
         try:
             estimator = EKFEstimator(initial_pose, q_std=q_std, r_std=r_std)
-            est_states = estimator.run(odo_deltas, laser_scans, laser_model_params)
+            est_states = estimator.run(odo_deltas, laser_scans, laser_model_params, odo_model_params)
             
             # Compare to ground truth trajectory
             n_steps = min(len(est_states), len(ground_truth))
@@ -76,6 +81,9 @@ def main():
     )
     parser.add_argument(
         "--model", default="laser_model.json", help="Path to laser model JSON"
+    )
+    parser.add_argument(
+        "--odo-model", default=None, help="Path to odometry NARX model JSON (optional)"
     )
     parser.add_argument(
         "--map-info", default="map_info.json", help="Path to map info JSON"
@@ -106,8 +114,8 @@ def main():
     args = parser.parse_args()
 
     # Load data
-    initial_pose, odo_deltas, laser_scans, laser_model_params = load_data(
-        args.odo_diff, args.laser, args.model, args.map_info
+    initial_pose, odo_deltas, laser_scans, laser_model_params, odo_model_params = load_data(
+        args.odo_diff, args.laser, args.model, args.map_info, args.odo_model
     )
     
     # Check model type
@@ -153,7 +161,7 @@ def main():
 
     # Create objective function
     objective_fn = create_objective_function(
-        initial_pose, odo_deltas, laser_scans, laser_model_params, ground_truth
+        initial_pose, odo_deltas, laser_scans, laser_model_params, odo_model_params, ground_truth
     )
 
     # Decorate with use_named_args for named parameter passing

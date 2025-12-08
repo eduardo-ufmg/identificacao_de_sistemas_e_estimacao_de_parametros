@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
 
-from LaserDynamicModel import LaserDynamicModel, LaserNARXModel, load_model
-from OdometryDynamicModel import OdometryDynamicModel
+from LaserDynamicModel import LaserDynamicModel, LaserNARXModel, load_model as load_laser_model
+from OdometryDynamicModel import OdometryDynamicModel, OdometryNARXModel, load_model as load_odo_model
 
 
 class EKFEstimator:
@@ -83,6 +83,7 @@ class EKFEstimator:
         odo_deltas: np.ndarray,
         laser_data: np.ndarray,
         laser_model_params: tuple,
+        odo_model_params: tuple | None = None,
     ) -> np.ndarray:
         """Run EKF with one-step-ahead predictions from both odometry and laser models.
         
@@ -91,6 +92,7 @@ class EKFEstimator:
             laser_data: laser scans (n_steps, n_beams)
             laser_model_params: tuple from load_model - either (False, A, B, bias) for linear model
                                or (True, narx_model, poly_features, narx_config) for NARX
+            odo_model_params: optional tuple for NARX odometry model, or None for simple additive
         """
         is_narx = laser_model_params[0]
         
@@ -102,7 +104,11 @@ class EKFEstimator:
             laser_model = LaserDynamicModel(A, B, bias, self.initial_state)
         
         # Create odometry model for one-step-ahead predictions
-        odo_model = OdometryDynamicModel(self.initial_state)
+        if odo_model_params is not None:
+            is_odo_narx, odo_narx_model, odo_poly_features, odo_narx_config = odo_model_params
+            odo_model = OdometryNARXModel(odo_narx_model, odo_poly_features, odo_narx_config, self.initial_state)
+        else:
+            odo_model = OdometryDynamicModel(self.initial_state)
         
         states = [self.x.copy()]
         for i, (delta, scan) in enumerate(zip(odo_deltas, laser_data)):
@@ -170,6 +176,9 @@ def parse_args():
         "--model", default="laser_model.json", help="Path to laser model JSON"
     )
     parser.add_argument(
+        "--odo-model", default=None, help="Path to odometry NARX model JSON (optional)"
+    )
+    parser.add_argument(
         "--map-info", default="map_info.json", help="Path to map info JSON"
     )
     parser.add_argument(
@@ -228,7 +237,17 @@ def main():
     if odo_deltas.ndim == 1:
         odo_deltas = odo_deltas.reshape(-1, 3)
     laser_data = load_laser_data(args.laser)
-    laser_model_params = load_model(args.model)
+    laser_model_params = load_laser_model(args.model)
+    
+    # Load odometry model if provided
+    odo_model_params = None
+    if args.odo_model:
+        odo_model_params = load_odo_model(args.odo_model)
+        is_odo_narx, _, _, odo_config = odo_model_params
+        if is_odo_narx:
+            print(f"Using odometry NARX model: {odo_config['model_type']}, n_lags={odo_config['n_lags']}")
+    else:
+        print("Using simple additive odometry model")
     
     # Check model type for display
     is_narx = laser_model_params[0]
@@ -246,6 +265,7 @@ def main():
         odo_deltas=odo_deltas,
         laser_data=laser_data,
         laser_model_params=laser_model_params,
+        odo_model_params=odo_model_params,
     )
     
     # Build odometry-only trajectory for comparison

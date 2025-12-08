@@ -409,8 +409,8 @@ def main():
         help="Grid search: alpha values to test (default: 0.001 0.01 0.1)"
     )
     parser.add_argument(
-        "--grid-hidden-layers", type=str, nargs='+', default=['50,50', '100,50', '100,100'],
-        help="Grid search: hidden layer configurations (comma-separated, default: '50,50' '100,50' '100,100')"
+        "--grid-hidden-layers", type=str, nargs='+', default=['25,25', '50,50', '100,100'],
+        help="Grid search: hidden layer configurations (comma-separated, default: '25,25' '50,50' '100,100')"
     )
     parser.add_argument(
         "--save-grid-results", default=None, help="Path to save grid search results JSON"

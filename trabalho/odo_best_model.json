@@ -1,0 +1,17 @@
+{
+  "model_type": "narx",
+  "narx_config": {
+    "n_lags": 2,
+    "step": 1,
+    "model_type": "linear",
+    "poly_degree": null,
+    "hidden_layers": null,
+    "alpha": 1.0,
+    "n_features": 9
+  },
+  "rmse": [
+    0.1425095028058958,
+    0.055972245817419095,
+    0.8692593949678931
+  ]
+}
