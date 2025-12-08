@@ -6,16 +6,18 @@ from skopt import gp_minimize
 from skopt.space import Real
 from skopt.utils import use_named_args
 
-from UKF import (
-    UKFEstimator,
-    load_laser_data,
-    build_odometry_trajectory,
-)
 from LaserDynamicModel import load_model as load_laser_model
 from OdometryDynamicModel import load_model as load_odo_model
+from UKF import UKFEstimator, build_odometry_trajectory, load_laser_data
 
 
-def load_data(odo_diff_path: str, laser_path: str, model_path: str, map_info_path: str, odo_model_path: str | None = None):
+def load_data(
+    odo_diff_path: str,
+    laser_path: str,
+    model_path: str,
+    map_info_path: str,
+    odo_model_path: str | None = None,
+):
     """Load and prepare all data."""
     with open(map_info_path, "r") as f:
         map_info = json.load(f)
@@ -26,7 +28,7 @@ def load_data(odo_diff_path: str, laser_path: str, model_path: str, map_info_pat
         odo_deltas = odo_deltas.reshape(-1, 3)
     laser_data = load_laser_data(laser_path)
     laser_model_params = load_laser_model(model_path)
-    
+
     odo_model_params = None
     if odo_model_path:
         odo_model_params = load_odo_model(odo_model_path)
@@ -38,12 +40,20 @@ def load_data(odo_diff_path: str, laser_path: str, model_path: str, map_info_pat
     return initial_pose, odometry, laser_scans, laser_model_params, odo_model_params
 
 
-def create_objective_function(initial_pose, odo_deltas, laser_scans, laser_model_params, odo_model_params, ground_truth):
+def create_objective_function(
+    initial_pose,
+    odo_deltas,
+    laser_scans,
+    laser_model_params,
+    odo_model_params,
+    ground_truth,
+):
     """
     Create objective function closure for Bayesian Optimization.
-    
+
     Returns a function that takes individual parameters and returns RMSE.
     """
+
     def objective(q_x, q_y, q_theta, r_x, r_y, r_theta):
         """
         Objective function for Bayesian Optimization.
@@ -51,21 +61,23 @@ def create_objective_function(initial_pose, odo_deltas, laser_scans, laser_model
         """
         q_std = (q_x, q_y, q_theta)
         r_std = (r_x, r_y, r_theta)
-        
+
         try:
             estimator = UKFEstimator(initial_pose, q_std=q_std, r_std=r_std)
-            est_states = estimator.run(odo_deltas, laser_scans, laser_model_params, odo_model_params)
-            
+            est_states = estimator.run(
+                odo_deltas, laser_scans, laser_model_params, odo_model_params
+            )
+
             # Compare to ground truth trajectory
             n_steps = min(len(est_states), len(ground_truth))
             error = est_states[:n_steps] - ground_truth[:n_steps]
             rmse = np.sqrt(np.mean(np.sum(error**2, axis=1)))
-            
+
             return rmse
         except Exception as e:
             print(f"  Error in evaluation: {e}")
             return 1e10
-    
+
     return objective
 
 
@@ -92,18 +104,27 @@ def main():
         "--ground-truth", default=None, help="Path to ground truth trajectory CSV"
     )
     parser.add_argument(
-        "--n-calls", type=int, default=50, help="Number of Bayesian optimization iterations"
+        "--n-calls",
+        type=int,
+        default=50,
+        help="Number of Bayesian optimization iterations",
     )
     parser.add_argument(
         "--n-initial", type=int, default=10, help="Number of random initial evaluations"
     )
     parser.add_argument(
-        "--q-bounds", type=float, nargs=2, default=[0.01, 1.0], 
-        help="Search bounds for Q std parameters (min max)"
+        "--q-bounds",
+        type=float,
+        nargs=2,
+        default=[0.01, 1.0],
+        help="Search bounds for Q std parameters (min max)",
     )
     parser.add_argument(
-        "--r-bounds", type=float, nargs=2, default=[0.01, 1.0], 
-        help="Search bounds for R std parameters (min max)"
+        "--r-bounds",
+        type=float,
+        nargs=2,
+        default=[0.01, 1.0],
+        help="Search bounds for R std parameters (min max)",
     )
     parser.add_argument(
         "--output", default="ukf_tuned.json", help="Path to save tuned parameters"
@@ -114,15 +135,17 @@ def main():
     args = parser.parse_args()
 
     # Load data
-    initial_pose, odo_deltas, laser_scans, laser_model_params, odo_model_params = load_data(
-        args.odo_diff, args.laser, args.model, args.map_info, args.odo_model
+    initial_pose, odo_deltas, laser_scans, laser_model_params, odo_model_params = (
+        load_data(args.odo_diff, args.laser, args.model, args.map_info, args.odo_model)
     )
-    
+
     # Check model type
     is_narx = laser_model_params[0]
     if is_narx:
         _, _, _, narx_config = laser_model_params
-        print(f"Using NARX model: {narx_config['model_type']}, n_lags={narx_config['n_lags']}")
+        print(
+            f"Using NARX model: {narx_config['model_type']}, n_lags={narx_config['n_lags']}"
+        )
     else:
         print("Using linear model")
 
@@ -135,7 +158,9 @@ def main():
             )
         except Exception as e:
             print(f"Error: Could not load ground truth trajectory: {e}")
-            print("Ground truth is required for tuning with one-step-ahead predictions.")
+            print(
+                "Ground truth is required for tuning with one-step-ahead predictions."
+            )
             return
     else:
         print("Error: --ground-truth argument is required for UKF tuning.")
@@ -144,12 +169,12 @@ def main():
 
     # Define search space for Bayesian Optimization
     search_space = [
-        Real(args.q_bounds[0], args.q_bounds[1], name='q_x'),
-        Real(args.q_bounds[0], args.q_bounds[1], name='q_y'),
-        Real(args.q_bounds[0], args.q_bounds[1], name='q_theta'),
-        Real(args.r_bounds[0], args.r_bounds[1], name='r_x'),
-        Real(args.r_bounds[0], args.r_bounds[1], name='r_y'),
-        Real(args.r_bounds[0], args.r_bounds[1], name='r_theta'),
+        Real(args.q_bounds[0], args.q_bounds[1], name="q_x"),
+        Real(args.q_bounds[0], args.q_bounds[1], name="q_y"),
+        Real(args.q_bounds[0], args.q_bounds[1], name="q_theta"),
+        Real(args.r_bounds[0], args.r_bounds[1], name="r_x"),
+        Real(args.r_bounds[0], args.r_bounds[1], name="r_y"),
+        Real(args.r_bounds[0], args.r_bounds[1], name="r_theta"),
     ]
 
     print(f"\nStarting Bayesian Optimization")
@@ -161,7 +186,12 @@ def main():
 
     # Create objective function
     objective_fn = create_objective_function(
-        initial_pose, odo_deltas, laser_scans, laser_model_params, odo_model_params, ground_truth
+        initial_pose,
+        odo_deltas,
+        laser_scans,
+        laser_model_params,
+        odo_model_params,
+        ground_truth,
     )
 
     # Decorate with use_named_args for named parameter passing

@@ -22,7 +22,7 @@ def main():
     # Load map info and image
     with open("../map_info.json", "r") as f:
         map_info = json.load(f)
-    map_img = Image.open('../map.png')
+    map_img = Image.open("../map.png")
 
     # Load and decimate reference trajectory
     ref = np.loadtxt("ref.csv", delimiter=",")

@@ -5,8 +5,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
 
-from LaserDynamicModel import LaserDynamicModel, LaserNARXModel, load_model as load_laser_model
-from OdometryDynamicModel import OdometryDynamicModel, OdometryNARXModel, load_model as load_odo_model
+from LaserDynamicModel import LaserDynamicModel, LaserNARXModel
+from LaserDynamicModel import load_model as load_laser_model
+from OdometryDynamicModel import OdometryDynamicModel, OdometryNARXModel
+from OdometryDynamicModel import load_model as load_odo_model
 
 
 class EKFEstimator:
@@ -31,43 +33,43 @@ class EKFEstimator:
     def predict(self, control_delta: np.ndarray) -> None:
         """
         EKF prediction step.
-        
+
         State transition: x_{k+1} = f(x_k, u_k) = x_k + u_k
         where u_k is the odometry delta in global frame.
-        
+
         Jacobian: F = ∂f/∂x = I (identity matrix)
         """
         # State prediction
         self.x = self.x + control_delta
-        
+
         # Jacobian of state transition (identity for additive model)
         F = np.eye(3)
-        
+
         # Covariance prediction
         self.P = F @ self.P @ F.T + self.Q
 
     def update(self, measurement: np.ndarray) -> None:
         """
         EKF update step.
-        
+
         Measurement model: z_k = h(x_k) = x_k
         Jacobian: H = ∂h/∂x = I (identity matrix)
         """
         # Measurement Jacobian (identity for direct state measurement)
         H = np.eye(3)
-        
+
         # Innovation
         y = measurement - self.x
-        
+
         # Innovation covariance
         S = H @ self.P @ H.T + self.R
-        
+
         # Kalman gain
         K = self.P @ H.T @ np.linalg.inv(S)
-        
+
         # State update
         self.x = self.x + K @ y
-        
+
         # Covariance update (Joseph form for numerical stability)
         I_KH = np.eye(3) - K @ H
         self.P = I_KH @ self.P @ I_KH.T + K @ self.R @ K.T
@@ -79,14 +81,14 @@ class EKFEstimator:
         return self.x.copy()
 
     def run(
-        self, 
+        self,
         odo_deltas: np.ndarray,
         laser_data: np.ndarray,
         laser_model_params: tuple,
         odo_model_params: tuple | None = None,
     ) -> np.ndarray:
         """Run EKF with one-step-ahead predictions from both odometry and laser models.
-        
+
         Args:
             odo_deltas: odometry deltas (n_steps, 3) - [dx, dy, dtheta] in global frame
             laser_data: laser scans (n_steps, n_beams)
@@ -95,41 +97,44 @@ class EKFEstimator:
             odo_model_params: optional tuple for NARX odometry model, or None for simple additive
         """
         is_narx = laser_model_params[0]
-        
+
         if is_narx:
             _, narx_model, poly_features, narx_config = laser_model_params
-            laser_model = LaserNARXModel(narx_model, poly_features, narx_config, self.initial_state)
+            laser_model = LaserNARXModel(
+                narx_model, poly_features, narx_config, self.initial_state
+            )
         else:
             _, A, B, bias = laser_model_params
             laser_model = LaserDynamicModel(A, B, bias, self.initial_state)
-        
+
         # Create odometry model for one-step-ahead predictions
         if odo_model_params is not None:
-            is_odo_narx, odo_narx_model, odo_poly_features, odo_narx_config = odo_model_params
-            odo_model = OdometryNARXModel(odo_narx_model, odo_poly_features, odo_narx_config, self.initial_state)
+            is_odo_narx, odo_narx_model, odo_poly_features, odo_narx_config = (
+                odo_model_params
+            )
+            odo_model = OdometryNARXModel(
+                odo_narx_model, odo_poly_features, odo_narx_config, self.initial_state
+            )
         else:
             odo_model = OdometryDynamicModel(self.initial_state)
-        
+
         states = [self.x.copy()]
         for i, (delta, scan) in enumerate(zip(odo_deltas, laser_data)):
             # One-step-ahead: reset both models to current fused estimate
             current_state = states[i].copy()
-            
+
             # Get odometry prediction from current fused state
             odo_model.state = current_state.copy()
             odo_prediction = odo_model.step(delta)
             control = odo_prediction - current_state  # Delta from current state
-            
+
             # Get laser prediction from current fused state
             laser_model.state = current_state.copy()
             laser_measurement = laser_model.step(scan)
-            
+
             # Fuse predictions
             states.append(self.step(control, laser_measurement))
         return np.array(states)
-
-
-
 
 
 def load_laser_data(laser_path: str):
@@ -238,25 +243,29 @@ def main():
         odo_deltas = odo_deltas.reshape(-1, 3)
     laser_data = load_laser_data(args.laser)
     laser_model_params = load_laser_model(args.model)
-    
+
     # Load odometry model if provided
     odo_model_params = None
     if args.odo_model:
         odo_model_params = load_odo_model(args.odo_model)
         is_odo_narx, _, _, odo_config = odo_model_params
         if is_odo_narx:
-            print(f"Using odometry NARX model: {odo_config['model_type']}, n_lags={odo_config['n_lags']}")
+            print(
+                f"Using odometry NARX model: {odo_config['model_type']}, n_lags={odo_config['n_lags']}"
+            )
     else:
         print("Using simple additive odometry model")
-    
+
     # Check model type for display
     is_narx = laser_model_params[0]
     if is_narx:
         _, _, _, narx_config = laser_model_params
-        model_info = f"NARX ({narx_config['model_type']}, n_lags={narx_config['n_lags']})"
+        model_info = (
+            f"NARX ({narx_config['model_type']}, n_lags={narx_config['n_lags']})"
+        )
     else:
         model_info = "Linear model"
-    
+
     print(f"Using laser model: {model_info}")
 
     # EKF Estimation with one-step-ahead predictions from both models
@@ -267,7 +276,7 @@ def main():
         laser_model_params=laser_model_params,
         odo_model_params=odo_model_params,
     )
-    
+
     # Build odometry-only trajectory for comparison
     odom_traj = build_odometry_trajectory(args.odo_diff, initial_pose)
 

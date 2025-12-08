@@ -5,8 +5,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
 
-from LaserDynamicModel import LaserDynamicModel, LaserNARXModel, load_model as load_laser_model
-from OdometryDynamicModel import OdometryDynamicModel, OdometryNARXModel, load_model as load_odo_model
+from LaserDynamicModel import LaserDynamicModel, LaserNARXModel
+from LaserDynamicModel import load_model as load_laser_model
+from OdometryDynamicModel import OdometryDynamicModel, OdometryNARXModel
+from OdometryDynamicModel import load_model as load_odo_model
 
 
 class ParticleFilter:
@@ -28,15 +30,17 @@ class ParticleFilter:
 
         # Initialize particles around initial state
         self.particles = np.tile(self.initial_state, (self.n_particles, 1))
-        self.particles += np.random.randn(self.n_particles, 3) * np.array([0.1, 0.1, 0.1])
-        
+        self.particles += np.random.randn(self.n_particles, 3) * np.array(
+            [0.1, 0.1, 0.1]
+        )
+
         # Initialize uniform weights
         self.weights = np.ones(self.n_particles) / self.n_particles
 
     def predict(self, control_delta: np.ndarray) -> None:
         """
         Particle filter prediction step.
-        
+
         Apply control with added process noise to each particle.
         """
         # Add process noise to control
@@ -46,22 +50,22 @@ class ParticleFilter:
     def update(self, measurement: np.ndarray) -> None:
         """
         Particle filter update step.
-        
+
         Compute weights based on measurement likelihood (Gaussian).
         """
         # Compute innovation for each particle
         innovations = measurement - self.particles
-        
+
         # Compute likelihood (Gaussian)
         # p(z|x) ∝ exp(-0.5 * (z-h(x))^T R^{-1} (z-h(x)))
         R_inv = np.diag(1.0 / np.square(self.r_std))
-        
+
         # Mahalanobis distance for each particle
         mahal_dist = np.sum(innovations @ R_inv * innovations, axis=1)
-        
+
         # Likelihood (unnormalized)
         likelihoods = np.exp(-0.5 * mahal_dist)
-        
+
         # Update weights
         self.weights *= likelihoods
         self.weights += 1e-300  # Avoid division by zero
@@ -74,14 +78,16 @@ class ParticleFilter:
         """
         # Compute effective sample size
         n_eff = 1.0 / np.sum(np.square(self.weights))
-        
+
         if n_eff < self.resample_threshold * self.n_particles:
             # Systematic resampling
-            positions = (np.arange(self.n_particles) + np.random.rand()) / self.n_particles
+            positions = (
+                np.arange(self.n_particles) + np.random.rand()
+            ) / self.n_particles
             cumulative_sum = np.cumsum(self.weights)
-            
+
             indices = np.searchsorted(cumulative_sum, positions)
-            
+
             # Resample particles
             self.particles = self.particles[indices]
             self.weights = np.ones(self.n_particles) / self.n_particles
@@ -98,14 +104,14 @@ class ParticleFilter:
         return self.estimate()
 
     def run(
-        self, 
+        self,
         odo_deltas: np.ndarray,
         laser_data: np.ndarray,
         laser_model_params: tuple,
         odo_model_params: tuple | None = None,
     ) -> np.ndarray:
         """Run Particle Filter with one-step-ahead predictions from both odometry and laser models.
-        
+
         Args:
             odo_deltas: odometry deltas (n_steps, 3) - [dx, dy, dtheta] in global frame
             laser_data: laser scans (n_steps, n_beams)
@@ -114,41 +120,44 @@ class ParticleFilter:
             odo_model_params: optional tuple for NARX odometry model, or None for simple additive
         """
         is_narx = laser_model_params[0]
-        
+
         if is_narx:
             _, narx_model, poly_features, narx_config = laser_model_params
-            laser_model = LaserNARXModel(narx_model, poly_features, narx_config, self.initial_state)
+            laser_model = LaserNARXModel(
+                narx_model, poly_features, narx_config, self.initial_state
+            )
         else:
             _, A, B, bias = laser_model_params
             laser_model = LaserDynamicModel(A, B, bias, self.initial_state)
-        
+
         # Create odometry model for one-step-ahead predictions
         if odo_model_params is not None:
-            is_odo_narx, odo_narx_model, odo_poly_features, odo_narx_config = odo_model_params
-            odo_model = OdometryNARXModel(odo_narx_model, odo_poly_features, odo_narx_config, self.initial_state)
+            is_odo_narx, odo_narx_model, odo_poly_features, odo_narx_config = (
+                odo_model_params
+            )
+            odo_model = OdometryNARXModel(
+                odo_narx_model, odo_poly_features, odo_narx_config, self.initial_state
+            )
         else:
             odo_model = OdometryDynamicModel(self.initial_state)
-        
+
         states = [self.estimate()]
         for i, (delta, scan) in enumerate(zip(odo_deltas, laser_data)):
             # One-step-ahead: reset both models to current fused estimate
             current_state = states[i].copy()
-            
+
             # Get odometry prediction from current fused state
             odo_model.state = current_state.copy()
             odo_prediction = odo_model.step(delta)
             control = odo_prediction - current_state  # Delta from current state
-            
+
             # Get laser prediction from current fused state
             laser_model.state = current_state.copy()
             laser_measurement = laser_model.step(scan)
-            
+
             # Fuse predictions
             states.append(self.step(control, laser_measurement))
         return np.array(states)
-
-
-
 
 
 def load_laser_data(laser_path: str):
@@ -282,34 +291,38 @@ def main():
         odo_deltas = odo_deltas.reshape(-1, 3)
     laser_data = load_laser_data(args.laser)
     laser_model_params = load_laser_model(args.model)
-    
+
     # Load odometry model if provided
     odo_model_params = None
     if args.odo_model:
         odo_model_params = load_odo_model(args.odo_model)
         is_odo_narx, _, _, odo_config = odo_model_params
         if is_odo_narx:
-            print(f"Using odometry NARX model: {odo_config['model_type']}, n_lags={odo_config['n_lags']}")
+            print(
+                f"Using odometry NARX model: {odo_config['model_type']}, n_lags={odo_config['n_lags']}"
+            )
     else:
         print("Using simple additive odometry model")
-    
+
     # Check model type for display
     is_narx = laser_model_params[0]
     if is_narx:
         _, _, _, narx_config = laser_model_params
-        model_info = f"NARX ({narx_config['model_type']}, n_lags={narx_config['n_lags']})"
+        model_info = (
+            f"NARX ({narx_config['model_type']}, n_lags={narx_config['n_lags']})"
+        )
     else:
         model_info = "Linear model"
-    
+
     print(f"Using laser model: {model_info}")
 
     # PF Estimation with one-step-ahead predictions from both models
     pf = ParticleFilter(
-        initial_pose, 
-        n_particles=n_particles, 
-        q_std=q_std, 
+        initial_pose,
+        n_particles=n_particles,
+        q_std=q_std,
         r_std=r_std,
-        resample_threshold=resample_threshold
+        resample_threshold=resample_threshold,
     )
     est_states = pf.run(
         odo_deltas=odo_deltas,
@@ -317,7 +330,7 @@ def main():
         laser_model_params=laser_model_params,
         odo_model_params=odo_model_params,
     )
-    
+
     # Build odometry-only trajectory for comparison
     odom_traj = build_odometry_trajectory(args.odo_diff, initial_pose)
 
