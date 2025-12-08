@@ -111,12 +111,12 @@ def main():
     )
     
     # Check model type
-    is_mixture = laser_model_params[3]
-    if is_mixture:
-        n_experts = len(laser_model_params[0])
-        print(f"Using mixture of experts model with {n_experts} experts")
+    is_narx = laser_model_params[0]
+    if is_narx:
+        _, _, _, narx_config = laser_model_params
+        print(f"Using NARX model: {narx_config['model_type']}, n_lags={narx_config['n_lags']}")
     else:
-        print("Using single linear model")
+        print("Using linear model")
 
     # Load ground truth trajectory (required for meaningful optimization)
     if args.ground_truth:

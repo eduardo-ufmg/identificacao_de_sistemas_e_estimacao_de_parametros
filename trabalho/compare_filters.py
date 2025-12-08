@@ -363,12 +363,12 @@ def plot_comparison(data: dict, trajectories: dict, exec_times: dict, output_pat
     
     # Add info text
     info_text = f"Data: {len(data['odo_deltas'])} steps\n"
-    model_type = "Mixture" if data['laser_model_params'][3] else "Single"
-    if data['laser_model_params'][3]:
-        n_experts = len(data['laser_model_params'][0])
-        info_text += f"Model: {model_type} ({n_experts} experts)\n"
+    is_narx = data['laser_model_params'][0]
+    if is_narx:
+        _, _, _, narx_config = data['laser_model_params']
+        info_text += f"Model: NARX ({narx_config['model_type']}, n_lags={narx_config['n_lags']})\n"
     else:
-        info_text += f"Model: {model_type}\n"
+        info_text += "Model: Linear\n"
     info_text += f"Reference: {'Available' if ref_traj is not None else 'Not available'}"
     
     fig.text(0.02, 0.02, info_text, fontsize=9, family='monospace',
@@ -508,12 +508,12 @@ def main():
     data = load_data(args)
     
     # Check model type
-    is_mixture = data['laser_model_params'][3]
-    if is_mixture:
-        n_experts = len(data['laser_model_params'][0])
-        print(f"Using mixture model with {n_experts} experts")
+    is_narx = data['laser_model_params'][0]
+    if is_narx:
+        _, _, _, narx_config = data['laser_model_params']
+        print(f"Using NARX model: {narx_config['model_type']}, n_lags={narx_config['n_lags']}")
     else:
-        print("Using single linear model")
+        print("Using linear model")
     
     # Load or use default parameters for each filter
     print("\nLoading filter parameters...")

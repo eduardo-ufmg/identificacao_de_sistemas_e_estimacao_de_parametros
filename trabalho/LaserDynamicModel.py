@@ -1,11 +1,10 @@
 import argparse
 import json
+import pickle
 
 import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
-from sklearn.mixture import GaussianMixture
-from sklearn.cluster import KMeans
 
 
 class LaserDynamicModel:
@@ -91,34 +90,48 @@ class LaserDynamicModel:
         return np.array(trajectory)
 
 
-class LaserMixtureModel:
+class LaserNARXModel:
     """
-    Simulates robot position from laser scans using a mixture of linear experts.
-    Each expert is a linear dynamic model, and a gating network determines their contributions.
+    Simulates robot position from laser scans using a NARX (Nonlinear AutoRegressive with eXogenous) model.
+    Uses past states and current laser features to predict next state.
     """
 
     def __init__(
         self,
-        experts: list,
-        gating_model,
-        gating_type: str,
+        narx_model,
+        poly_features,
+        narx_config: dict,
         initial_pose: np.ndarray
     ):
         """
-        Initialize the mixture model.
+        Initialize the NARX model.
 
         Args:
-            experts: List of dicts with 'A', 'B', 'bias' for each expert
-            gating_model: Fitted gating model (GaussianMixture or KMeans)
-            gating_type: 'gmm' or 'kmeans'
+            narx_model: Fitted sklearn model (Ridge, MLPRegressor, etc.)
+            poly_features: PolynomialFeatures object (or None)
+            narx_config: Configuration dictionary with 'n_lags', 'step', 'model_type', etc.
             initial_pose: initial state [x, y, theta]
         """
-        self.experts = experts
-        self.gating_model = gating_model
-        self.gating_type = gating_type
-        self.n_experts = len(experts)
-        self.state = initial_pose.copy()
-        self.is_mixture = True
+        self.narx_model = narx_model
+        self.poly_features = poly_features
+        self.config = narx_config
+        self.n_lags = narx_config['n_lags']
+        self.step_size = narx_config['step']  # Renamed to avoid shadowing step() method
+        self.model_type = narx_config['model_type']
+        
+        # Initialize state history with copies of initial pose
+        self.state_history = [initial_pose.copy() for _ in range(self.n_lags)]
+        self.is_narx = True
+
+    @property
+    def state(self) -> np.ndarray:
+        """Return the current state (most recent in history)."""
+        return self.state_history[-1].copy()
+    
+    @state.setter
+    def state(self, new_state: np.ndarray) -> None:
+        """Set the current state (most recent in history)."""
+        self.state_history[-1] = new_state.copy()
 
     @staticmethod
     def extract_laser_features(scan: np.ndarray) -> np.ndarray:
@@ -142,37 +155,30 @@ class LaserMixtureModel:
             dtype=float,
         )
 
-    def compute_gating_weights(self, state: np.ndarray, features: np.ndarray) -> np.ndarray:
+    def build_narx_input(self, laser_scan: np.ndarray) -> np.ndarray:
         """
-        Compute gating weights for each expert based on current state and features.
+        Build NARX input from state history and current laser scan.
         
         Args:
-            state: current state [x, y, theta]
-            features: laser features
+            laser_scan: Current laser scan
             
         Returns:
-            weights: array of shape (n_experts,) with weights summing to 1
+            Input vector for NARX model
         """
-        # Concatenate state and features as input to gating network
-        x_input = np.concatenate([state, features]).reshape(1, -1)
+        # Past states (flattened)
+        past_states = np.array(self.state_history).flatten()
         
-        if self.gating_type == 'gmm':
-            # Use GMM posterior probabilities
-            weights = self.gating_model.predict_proba(x_input)[0]
-        else:  # kmeans
-            # Use distance-based soft assignment
-            distances = np.linalg.norm(
-                self.gating_model.cluster_centers_ - x_input, axis=1
-            )
-            # Convert distances to weights using softmax
-            inv_distances = 1.0 / (distances + 1e-6)
-            weights = inv_distances / np.sum(inv_distances)
+        # Current laser features
+        laser_features = self.extract_laser_features(laser_scan)
         
-        return weights
+        # Concatenate
+        x_input = np.concatenate([past_states, laser_features])
+        
+        return x_input
 
     def step(self, laser_scan: np.ndarray) -> np.ndarray:
         """
-        Apply one step of the mixture model.
+        Apply one step of the NARX model.
 
         Args:
             laser_scan: 1-D array of laser ranges
@@ -180,21 +186,21 @@ class LaserMixtureModel:
         Returns:
             Updated state [x, y, theta]
         """
-        features = self.extract_laser_features(laser_scan)
-        weights = self.compute_gating_weights(self.state, features)
+        # Build input
+        x_input = self.build_narx_input(laser_scan).reshape(1, -1)
         
-        # Weighted combination of expert predictions
-        next_state = np.zeros(3, dtype=float)
-        for k, expert in enumerate(self.experts):
-            A_k = np.array(expert['A'])
-            B_k = np.array(expert['B'])
-            bias_k = np.array(expert['bias'])
-            
-            pred_k = A_k @ self.state + B_k @ features + bias_k
-            next_state += weights[k] * pred_k
+        # Apply polynomial features if needed
+        if self.poly_features is not None:
+            x_input = self.poly_features.transform(x_input)
         
-        self.state = next_state
-        return self.state.copy()
+        # Predict
+        next_state = self.narx_model.predict(x_input)[0]
+        
+        # Update state history (shift left and append new state)
+        self.state_history.pop(0)
+        self.state_history.append(next_state.copy())
+        
+        return next_state
 
     def simulate(self, laser_data: np.ndarray, true_states: np.ndarray | None = None) -> np.ndarray:
         """
@@ -203,51 +209,59 @@ class LaserMixtureModel:
         Args:
             laser_data: shape (n_steps, n_beams)
             true_states: shape (n_steps + 1, 3) - if provided, performs one-step-ahead
-                        prediction by resetting to true state at each step.
+                        prediction by resetting to true state history at each step.
                         If None, performs free-run simulation.
 
         Returns:
             Trajectory array of shape (n_steps + 1, 3) including initial pose
         """
-        trajectory = [self.state.copy()]
+        # Start from the most recent state in history
+        trajectory = [self.state_history[-1].copy()]
+        
         for i, scan in enumerate(laser_data):
             if true_states is not None:
-                # One-step-ahead: reset to true state before prediction
-                self.state = true_states[i].copy()
+                # One-step-ahead: reset state history to true states
+                # Use states from i to i+n_lags-1 (or available)
+                start_idx = max(0, i - self.n_lags + 1)
+                end_idx = i + 1
+                
+                # Pad with initial states if needed
+                if start_idx == 0 and end_idx < self.n_lags:
+                    self.state_history = [true_states[0].copy() for _ in range(self.n_lags - end_idx)]
+                    self.state_history.extend([true_states[j].copy() for j in range(start_idx, end_idx)])
+                else:
+                    self.state_history = [true_states[j].copy() for j in range(start_idx, end_idx)]
+                    # Pad to n_lags if needed
+                    while len(self.state_history) < self.n_lags:
+                        self.state_history.insert(0, true_states[0].copy())
+            
             trajectory.append(self.step(scan))
+        
         return np.array(trajectory)
 
 
 def load_model(model_json_path: str) -> tuple:
-    """Load model parameters from JSON file. Supports both single and mixture models."""
+    """Load model parameters from JSON file. Supports simple linear and NARX models."""
     with open(model_json_path, "r") as f:
         data = json.load(f)
     
-    # Check if it's a mixture model
-    if 'n_experts' in data and data['n_experts'] > 1:
-        # Load mixture of experts
-        experts = data['experts']
-        gating_type: str = data['gating_type']
-        
-        # Reconstruct gating model
-        if gating_type == 'gmm':
-            n_components = data['n_experts']
-            gating_model = GaussianMixture(n_components=n_components, covariance_type='full')
-            # Manually set parameters
-            gating_model.means_ = np.array(data['gating']['means'])
-            gating_model.covariances_ = np.array(data['gating']['covariances'])
-            gating_model.weights_ = np.array(data['gating']['weights'])
-            gating_model.precisions_cholesky_ = np.linalg.cholesky(
-                np.linalg.inv(gating_model.covariances_)
-            )
-        else:  # kmeans
-            n_clusters = data['n_experts']
-            gating_model = KMeans(n_clusters=n_clusters)
-            gating_model.cluster_centers_ = np.array(data['gating']['centers'])
-        
-        return True, experts, gating_model, gating_type
+    # Check if it's a NARX model
+    if 'model_type' in data and data['model_type'] == 'narx':
+        # Load NARX model from pickle file
+        pkl_path = model_json_path.replace('.json', '.pkl')
+        try:
+            with open(pkl_path, 'rb') as f:
+                model_data = pickle.load(f)
+            
+            narx_model = model_data['narx_model']
+            poly_features = model_data['poly_features']
+            narx_config = model_data['narx_config']
+            
+            return True, narx_model, poly_features, narx_config
+        except FileNotFoundError:
+            raise FileNotFoundError(f"NARX model requires pickle file: {pkl_path}")
     else:
-        # Single model
+        # Simple linear model
         A = np.array(data["A"])
         B = np.array(data["B"])
         bias = np.array(data["bias"])
@@ -278,7 +292,7 @@ def main():
 
     # Load model parameters
     model_data = load_model(args.model)
-    is_mixture = model_data[0]
+    is_narx = model_data[0]
 
     # Load map info
     with open(args.map_info, "r") as f:
@@ -301,14 +315,14 @@ def main():
             true_states = true_states.reshape(1, -1)
 
     # Create and simulate model
-    if is_mixture:
-        _, experts, gating_model, gating_type = model_data
-        model = LaserMixtureModel(list(experts), gating_model, gating_type, initial_pose)
-        model_type = f"Mixture ({len(experts)} experts)"
+    if is_narx:
+        _, narx_model, poly_features, narx_config = model_data
+        model = LaserNARXModel(narx_model, poly_features, narx_config, initial_pose)
+        model_type = f"NARX ({narx_config['model_type']}, lags={narx_config['n_lags']})"
     else:
         _, A, B, bias = model_data
         model = LaserDynamicModel(A, B, bias, initial_pose)
-        model_type = "Single"
+        model_type = "Linear"
     
     trajectory = model.simulate(laser_data, true_states)
 
@@ -338,7 +352,7 @@ def main():
     ax.set_xlabel("X Position (m)")
     ax.set_ylabel("Y Position (m)")
     title = f"Robot Trajectory from Laser Dynamic Model ({mode_label})"
-    if is_mixture:
+    if is_narx:
         title += f" - {model_type}"
     ax.set_title(title)
     ax.set_xlim(map_info["xlimits"])
