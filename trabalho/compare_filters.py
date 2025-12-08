@@ -54,8 +54,16 @@ def load_data(args):
         if ref_traj.ndim == 1:
             ref_traj = ref_traj.reshape(-1, 3)
     
-    # Odometry trajectory for comparison
-    odom_traj = build_odometry_trajectory(args.odo_diff, initial_pose)
+    # Odometry trajectory for comparison - use NARX model if provided
+    if odo_model_params is not None:
+        # Use odometry NARX model
+        from OdometryDynamicModel import OdometryNARXModel
+        is_odo_narx, odo_narx_model, odo_poly_features, odo_narx_config = odo_model_params
+        odo_model_obj = OdometryNARXModel(odo_narx_model, odo_poly_features, odo_narx_config, initial_pose)
+        odom_traj = odo_model_obj.simulate(odo_deltas)
+    else:
+        # Use simple additive odometry model
+        odom_traj = build_odometry_trajectory(args.odo_diff, initial_pose)
     
     return {
         'map_info': map_info,
@@ -291,8 +299,14 @@ def plot_comparison(data: dict, trajectories: dict, exec_times: dict, output_pat
         ax_main.plot(ref_traj[:, 0], ref_traj[:, 1], 'k-', linewidth=2.5, 
                     label='Reference (Ground Truth)', alpha=0.8)
     
+    # Label odometry trajectory based on model type
+    odo_label = 'Odometry Only'
+    if data.get('odo_model_params') is not None:
+        _, _, _, odo_config = data['odo_model_params']
+        odo_label = f"Odometry Only (NARX {odo_config['model_type']})"
+    
     ax_main.plot(odom_traj[:, 0], odom_traj[:, 1], 'b--', linewidth=1.5,
-                label='Odometry Only', alpha=0.6)
+                label=odo_label, alpha=0.6)
     
     for name, traj in trajectories.items():
         ax_main.plot(traj[:, 0], traj[:, 1], 
@@ -375,9 +389,17 @@ def plot_comparison(data: dict, trajectories: dict, exec_times: dict, output_pat
     is_narx = data['laser_model_params'][0]
     if is_narx:
         _, _, _, narx_config = data['laser_model_params']
-        info_text += f"Model: NARX ({narx_config['model_type']}, n_lags={narx_config['n_lags']})\n"
+        info_text += f"Laser Model: NARX ({narx_config['model_type']}, n_lags={narx_config['n_lags']})\n"
     else:
-        info_text += "Model: Linear\n"
+        info_text += "Laser Model: Linear\n"
+    
+    # Add odometry model info
+    if data.get('odo_model_params') is not None:
+        _, _, _, odo_config = data['odo_model_params']
+        info_text += f"Odo Model: NARX ({odo_config['model_type']}, n_lags={odo_config['n_lags']})\n"
+    else:
+        info_text += "Odo Model: Additive\n"
+    
     info_text += f"Reference: {'Available' if ref_traj is not None else 'Not available'}"
     
     fig.text(0.02, 0.02, info_text, fontsize=9, family='monospace',
@@ -521,13 +543,20 @@ def main():
     print("\nLoading data...")
     data = load_data(args)
     
-    # Check model type
+    # Check laser model type
     is_narx = data['laser_model_params'][0]
     if is_narx:
         _, _, _, narx_config = data['laser_model_params']
-        print(f"Using NARX model: {narx_config['model_type']}, n_lags={narx_config['n_lags']}")
+        print(f"Using laser NARX model: {narx_config['model_type']}, n_lags={narx_config['n_lags']}")
     else:
-        print("Using linear model")
+        print("Using linear laser model")
+    
+    # Check odometry model type
+    if data.get('odo_model_params') is not None:
+        _, _, _, odo_config = data['odo_model_params']
+        print(f"Using odometry NARX model: {odo_config['model_type']}, n_lags={odo_config['n_lags']}")
+    else:
+        print("Using simple additive odometry model")
     
     # Load or use default parameters for each filter
     print("\nLoading filter parameters...")
